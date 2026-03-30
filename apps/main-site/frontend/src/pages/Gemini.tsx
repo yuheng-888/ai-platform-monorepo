@@ -141,8 +141,6 @@ type GeminiHistoryPayload = {
 type RegisterFormValues = {
   count: number
   concurrency: number
-  domain?: string
-  mail_provider?: string
 }
 
 type GeminiSharedSettingsValues = {
@@ -183,8 +181,6 @@ type GeminiNativeSettingsValues = {
   logo_url?: string
   chat_url?: string
 }
-
-const GEMINI_SHARED_MAIL_PROVIDERS = new Set(['duckmail', 'moemail', 'freemail', 'gptmail', 'cfmail'])
 
 async function geminiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers || {})
@@ -408,7 +404,7 @@ export default function GeminiPage() {
       })
 
       const selectedMailProvider = String(sharedValues.mail_provider || '')
-      const supportsSharedMailProvider = GEMINI_SHARED_MAIL_PROVIDERS.has(selectedMailProvider)
+      const supportsSharedMailProvider = MAIL_PROVIDER_OPTIONS.some((item) => item.value === selectedMailProvider)
       const basicPayload: Record<string, any> = {
         api_key: nativeValues.api_key || '',
         base_url: nativeValues.base_url || '',
@@ -542,21 +538,14 @@ export default function GeminiPage() {
       try {
         const cfg = await apiFetch('/config')
         const concurrency = Number.parseInt(String(cfg.register_max_concurrency || ''), 10)
-        const mailProvider = GEMINI_SHARED_MAIL_PROVIDERS.has(String(cfg.mail_provider || ''))
-          ? String(cfg.mail_provider || '')
-          : 'duckmail'
         registerForm.setFieldsValue({
           count: 1,
           concurrency: Number.isFinite(concurrency) && concurrency > 0 ? concurrency : 5,
-          domain: '',
-          mail_provider: mailProvider,
         })
       } catch {
         registerForm.setFieldsValue({
           count: 1,
           concurrency: 5,
-          domain: '',
-          mail_provider: 'duckmail',
         })
       }
       setRegisterOpen(true)
@@ -1298,17 +1287,16 @@ export default function GeminiPage() {
         cancelText="取消"
       >
         <Form form={registerForm} layout="vertical">
-          <Form.Item name="count" label="数量" rules={[{ required: true, message: '请输入注册数量' }]}>
+          <Form.Item name="count" label="注册数量" rules={[{ required: true, message: '请输入注册数量' }]}>
             <InputNumber min={1} max={200} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="concurrency" label="并发" rules={[{ required: true, message: '请输入并发数量' }]}>
+          <Form.Item
+            name="concurrency"
+            label="并发数"
+            rules={[{ required: true, message: '请输入并发数量' }]}
+            extra="实际生效不超过全局“注册并发上限”"
+          >
             <InputNumber min={1} max={50} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="mail_provider" label="邮箱渠道">
-            <Select options={MAIL_PROVIDER_OPTIONS} allowClear />
-          </Form.Item>
-          <Form.Item name="domain" label="指定域名">
-            <Input placeholder="可选，不填则使用默认邮箱配置" />
           </Form.Item>
         </Form>
       </Modal>
