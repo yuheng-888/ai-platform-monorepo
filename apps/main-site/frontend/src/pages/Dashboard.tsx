@@ -155,6 +155,14 @@ export default function Dashboard() {
                     <Tag color={restock?.has_active_task ? 'processing' : 'default'}>
                       {restock?.has_active_task ? '补货任务进行中' : '当前无补货任务'}
                     </Tag>
+                    <Tag color={restock?.last_error ? 'error' : 'blue'}>
+                      库存来源: {restock?.source === 'cliproxyapi' ? 'CLIProxyAPI' : '本地数据库'}
+                    </Tag>
+                    {restock?.last_error ? (
+                      <Typography.Text type="danger" style={{ display: 'block', marginTop: 8, maxWidth: 420 }}>
+                        {restock.last_error}
+                      </Typography.Text>
+                    ) : null}
                   </div>
                 </div>
               </Space>
