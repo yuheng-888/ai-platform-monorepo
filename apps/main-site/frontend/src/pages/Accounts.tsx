@@ -28,6 +28,7 @@ import {
 } from '@ant-design/icons'
 import { apiFetch, API_BASE } from '@/lib/utils'
 import { normalizeExecutorForPlatform } from '@/lib/registerOptions'
+import GeminiPage from '@/pages/Gemini'
 
 const { Text } = Typography
 const FALLBACK_CONCURRENCY = 1
@@ -171,6 +172,9 @@ function ActionMenu({ acc, onRefresh }: { acc: any; onRefresh: () => void }) {
 
 export default function Accounts() {
   const { platform } = useParams<{ platform: string }>()
+  if (platform === 'gemini') {
+    return <GeminiPage />
+  }
   const [currentPlatform, setCurrentPlatform] = useState(platform || 'trae')
   const [accounts, setAccounts] = useState<any[]>([])
   const [total, setTotal] = useState(0)

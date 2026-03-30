@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { ConfigProvider, Layout, Menu, Button, Space, Spin, Typography } from 'antd'
 import {
@@ -17,7 +17,6 @@ import Register from '@/pages/Register'
 import Proxies from '@/pages/Proxies'
 import Settings from '@/pages/Settings'
 import TaskHistory from '@/pages/TaskHistory'
-import GeminiPage from '@/pages/Gemini'
 import { darkTheme, lightTheme } from './theme'
 import LoginPage from '@/pages/Login'
 import { apiFetch } from '@/lib/utils'
@@ -126,7 +125,7 @@ function AppContent() {
     if (path === '/history') return ['/history']
     if (path === '/proxies') return ['/proxies']
     if (path === '/settings') return ['/settings']
-    if (path === '/gemini-console') return ['/gemini-console']
+    if (path === '/gemini-console') return ['/accounts/gemini']
     return ['/']
   }
 
@@ -275,7 +274,7 @@ function AppContent() {
             <Route path="/history" element={<TaskHistory />} />
             <Route path="/proxies" element={<Proxies />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="/gemini-console" element={<GeminiPage />} />
+            <Route path="/gemini-console" element={<Navigate to="/accounts/gemini" replace />} />
           </Routes>
         </Content>
       </Layout>

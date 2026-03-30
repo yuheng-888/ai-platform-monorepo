@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -6,25 +6,40 @@ import {
   Col,
   Descriptions,
   Empty,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Popconfirm,
   Row,
+  Select,
   Space,
   Spin,
   Statistic,
   Table,
   Tag,
   Typography,
+  message,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
-  ApiOutlined,
   CheckCircleOutlined,
-  LinkOutlined,
+  PlayCircleOutlined,
   ReloadOutlined,
+  SyncOutlined,
 } from '@ant-design/icons'
 
 import { apiFetch } from '@/lib/utils'
 
 const { Text } = Typography
+
+const MAIL_PROVIDER_OPTIONS = [
+  { label: 'DuckMail', value: 'duckmail' },
+  { label: 'MoeMail', value: 'moemail' },
+  { label: 'Freemail', value: 'freemail' },
+  { label: 'GPTMail', value: 'gptmail' },
+  { label: 'Cloudflare Mail', value: 'cfmail' },
+]
 
 type GeminiStatus = {
   name: string
@@ -56,6 +71,7 @@ type GeminiAccount = {
   remaining_display?: string
   is_available?: boolean
   disabled?: boolean
+  disabled_reason?: string | null
   cooldown_seconds?: number
   cooldown_reason?: string | null
   conversation_count?: number
@@ -78,12 +94,22 @@ type GeminiTask = {
   finished_at?: number | null
 }
 
-async function geminiFetch<T>(path: string): Promise<T> {
+type RegisterFormValues = {
+  count: number
+  concurrency: number
+  domain?: string
+  mail_provider?: string
+}
+
+async function geminiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers || {})
+  if (!headers.has('Content-Type') && init?.body && !(init.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
   const res = await fetch(path, {
     credentials: 'same-origin',
-    headers: {
-      Accept: 'application/json',
-    },
+    headers,
+    ...init,
   })
   const contentType = res.headers.get('content-type') || ''
   if (!res.ok) {
@@ -110,7 +136,7 @@ function formatTaskStatus(task?: GeminiTask | null) {
   return <Tag>{task.status}</Tag>
 }
 
-function formatCooldown(account: GeminiAccount) {
+function renderCooldown(account: GeminiAccount) {
   if (!account.cooldown_seconds || account.cooldown_seconds <= 0) {
     return <Tag color="success">正常</Tag>
   }
@@ -134,10 +160,20 @@ export default function GeminiPage() {
   const [registerTask, setRegisterTask] = useState<GeminiTask | null>(null)
   const [loginTask, setLoginTask] = useState<GeminiTask | null>(null)
   const [loading, setLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState('')
   const [error, setError] = useState('')
+  const [registerOpen, setRegisterOpen] = useState(false)
+  const [registerForm] = Form.useForm<RegisterFormValues>()
 
-  const load = async () => {
-    setLoading(true)
+  const hasActiveTask = useMemo(() => {
+    return ['pending', 'running'].includes(registerTask?.status || '')
+      || ['pending', 'running'].includes(loginTask?.status || '')
+  }, [loginTask?.status, registerTask?.status])
+
+  const load = async (silent = false) => {
+    if (!silent) {
+      setLoading(true)
+    }
     setError('')
     try {
       const [statusData, statsData, accountsData, registerTaskData, loginTaskData] = await Promise.all([
@@ -155,7 +191,9 @@ export default function GeminiPage() {
     } catch (e: any) {
       setError(e?.message || '加载 Gemini 状态失败')
     } finally {
-      setLoading(false)
+      if (!silent) {
+        setLoading(false)
+      }
     }
   }
 
@@ -163,13 +201,101 @@ export default function GeminiPage() {
     void load()
   }, [])
 
+  useEffect(() => {
+    if (!hasActiveTask) return
+    const timer = window.setInterval(() => {
+      void load(true)
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [hasActiveTask])
+
+  const openRegisterModal = () => {
+    registerForm.setFieldsValue({
+      count: 1,
+      concurrency: 5,
+      domain: '',
+      mail_provider: 'duckmail',
+    })
+    setRegisterOpen(true)
+  }
+
+  const handleStartRegister = async () => {
+    const values = await registerForm.validateFields()
+    setActionLoading('register')
+    try {
+      const task = await geminiFetch<GeminiTask>('/gemini/admin/register/start', {
+        method: 'POST',
+        body: JSON.stringify(values),
+      })
+      setRegisterTask(task)
+      setRegisterOpen(false)
+      message.success('Gemini 注册任务已启动')
+      await load(true)
+    } catch (e: any) {
+      message.error(e?.message || 'Gemini 注册任务启动失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  const handleLoginCheck = async () => {
+    setActionLoading('login-check')
+    try {
+      const task = await geminiFetch<GeminiTask>('/gemini/admin/login/check', {
+        method: 'POST',
+      })
+      setLoginTask(task)
+      message.success(task?.status === 'idle' ? '当前没有需要刷新的 Gemini 登录任务' : 'Gemini 登录校验任务已启动')
+      await load(true)
+    } catch (e: any) {
+      message.error(e?.message || 'Gemini 登录校验启动失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  const handleToggleAccount = async (account: GeminiAccount, disabled: boolean) => {
+    const actionKey = `${disabled ? 'disable' : 'enable'}-${account.id}`
+    setActionLoading(actionKey)
+    try {
+      await geminiFetch(`/gemini/admin/accounts/${account.id}/${disabled ? 'disable' : 'enable'}`, {
+        method: 'PUT',
+      })
+      message.success(disabled ? '账号已禁用' : '账号已启用')
+      await load(true)
+    } catch (e: any) {
+      message.error(e?.message || (disabled ? '禁用失败' : '启用失败'))
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  const handleDeleteAccount = async (accountId: string) => {
+    setActionLoading(`delete-${accountId}`)
+    try {
+      await geminiFetch(`/gemini/admin/accounts/${accountId}`, {
+        method: 'DELETE',
+      })
+      message.success('账号已删除')
+      await load(true)
+    } catch (e: any) {
+      message.error(e?.message || '删除失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
   const accountColumns: ColumnsType<GeminiAccount> = [
     {
       title: '账号 ID',
       dataIndex: 'id',
       key: 'id',
       ellipsis: true,
-      render: (value: string) => value || '-',
+      render: (value: string) => (
+        <Text copyable={{ text: value }} style={{ fontFamily: 'monospace', fontSize: 12 }}>
+          {value || '-'}
+        </Text>
+      ),
     },
     {
       title: '状态',
@@ -186,14 +312,26 @@ export default function GeminiPage() {
       title: '禁用',
       dataIndex: 'disabled',
       key: 'disabled',
-      width: 100,
-      render: (value: boolean) => (value ? <Tag color="error">已禁用</Tag> : <Tag color="success">启用</Tag>),
+      width: 120,
+      render: (value: boolean, record) =>
+        value ? (
+          <Space direction="vertical" size={0}>
+            <Tag color="error">已禁用</Tag>
+            {record.disabled_reason ? (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {record.disabled_reason}
+              </Text>
+            ) : null}
+          </Space>
+        ) : (
+          <Tag color="success">启用</Tag>
+        ),
     },
     {
       title: '冷却',
       key: 'cooldown',
       width: 180,
-      render: (_, record) => formatCooldown(record),
+      render: (_, record) => renderCooldown(record),
     },
     {
       title: '剩余时间',
@@ -216,26 +354,71 @@ export default function GeminiPage() {
       width: 110,
       render: (value?: number) => value ?? 0,
     },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 220,
+      render: (_, record) => (
+        <Space wrap>
+          {record.disabled ? (
+            <Button
+              size="small"
+              loading={actionLoading === `enable-${record.id}`}
+              onClick={() => void handleToggleAccount(record, false)}
+            >
+              启用
+            </Button>
+          ) : (
+            <Button
+              size="small"
+              loading={actionLoading === `disable-${record.id}`}
+              onClick={() => void handleToggleAccount(record, true)}
+            >
+              禁用
+            </Button>
+          )}
+          <Popconfirm
+            title="确认删除这个 Gemini 账号？"
+            onConfirm={() => void handleDeleteAccount(record.id)}
+            okText="删除"
+            cancelText="取消"
+          >
+            <Button size="small" danger loading={actionLoading === `delete-${record.id}`}>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
   ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>Gemini Gateway</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>Gemini 账号管理</h1>
           <p style={{ color: '#7a8ba3', marginTop: 4, marginBottom: 0 }}>
-            Gemini 已切回主站原生页展示，不再使用内嵌 iframe 面板。
+            Gemini 现在直接并到主站账号管理里，不再以独立控制台作为主操作入口。
           </p>
         </div>
         <Space wrap>
           <Button icon={<ReloadOutlined spin={loading} />} onClick={() => void load()} loading={loading}>
-            刷新状态
+            刷新
           </Button>
-          <Button icon={<LinkOutlined />} onClick={() => window.open('/gemini/', '_blank', 'noopener,noreferrer')}>
-            打开 Gemini 控制台
+          <Button
+            type="primary"
+            icon={<PlayCircleOutlined />}
+            loading={actionLoading === 'register'}
+            onClick={openRegisterModal}
+          >
+            注册补货
           </Button>
-          <Button icon={<ApiOutlined />} onClick={() => window.open('/gemini/public/logs', '_blank', 'noopener,noreferrer')}>
-            打开公开日志
+          <Button
+            icon={<SyncOutlined />}
+            loading={actionLoading === 'login-check'}
+            onClick={() => void handleLoginCheck()}
+          >
+            检查登录
           </Button>
         </Space>
       </div>
@@ -256,22 +439,14 @@ export default function GeminiPage() {
                   <Tag color="default">未知</Tag>
                 )}
               </Descriptions.Item>
-              <Descriptions.Item label="控制台路径">
-                <a href={status?.ui_path || '/gemini/'} target="_blank" rel="noreferrer">
-                  {status?.ui_path || '/gemini/'}
-                </a>
-              </Descriptions.Item>
-              <Descriptions.Item label="Health 路径">
-                {status?.health_path || '/gemini/health'}
-              </Descriptions.Item>
-              <Descriptions.Item label="API Base">
-                {status?.api_base_path || '/gemini/v1'}
-              </Descriptions.Item>
               <Descriptions.Item label="主站共享登录">
                 <Tag color="success">已启用</Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="Gemini 静态资源">
+              <Descriptions.Item label="Gemini UI 资源">
                 {status?.ui_available ? <Tag color="success">已部署</Tag> : <Tag color="warning">缺失</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label="API Base">
+                {status?.api_base_path || '/gemini/v1'}
               </Descriptions.Item>
               <Descriptions.Item label="版本">
                 {status?.version || '-'}
@@ -357,7 +532,7 @@ export default function GeminiPage() {
       </Row>
 
       <Card
-        title="账号概览"
+        title="Gemini 账号列表"
         extra={accounts.length ? <Tag color="blue">{accounts.length} 个账号</Tag> : null}
       >
         {accounts.length ? (
@@ -366,7 +541,7 @@ export default function GeminiPage() {
             columns={accountColumns}
             dataSource={accounts}
             pagination={{ pageSize: 8, hideOnSinglePage: true }}
-            scroll={{ x: 960 }}
+            scroll={{ x: 1100 }}
           />
         ) : (
           <Empty description="暂无 Gemini 账号数据" />
@@ -377,10 +552,35 @@ export default function GeminiPage() {
         <Alert
           type="warning"
           showIcon
-          message="Gemini 控制台静态资源缺失"
-          description="后端已挂载 Gemini，但完整控制台资源还没部署到服务器。当前主站原生页仍可查看状态和账号概览，等静态资源补齐后再用“打开 Gemini 控制台”进入完整面板。"
+          message="Gemini 独立控制台静态资源缺失"
+          description="这不会影响当前主站原生账号管理页。只是如果你想回看历史独立控制台，需要后续再补齐 Gemini 静态资源。"
         />
       ) : null}
+
+      <Modal
+        title="启动 Gemini 注册任务"
+        open={registerOpen}
+        onCancel={() => setRegisterOpen(false)}
+        onOk={() => void handleStartRegister()}
+        confirmLoading={actionLoading === 'register'}
+        okText="启动"
+        cancelText="取消"
+      >
+        <Form form={registerForm} layout="vertical">
+          <Form.Item name="count" label="数量" rules={[{ required: true, message: '请输入注册数量' }]}>
+            <InputNumber min={1} max={200} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="concurrency" label="并发" rules={[{ required: true, message: '请输入并发数量' }]}>
+            <InputNumber min={1} max={50} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="mail_provider" label="邮箱渠道">
+            <Select options={MAIL_PROVIDER_OPTIONS} allowClear />
+          </Form.Item>
+          <Form.Item name="domain" label="指定域名">
+            <Input placeholder="可选，不填则使用默认邮箱配置" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

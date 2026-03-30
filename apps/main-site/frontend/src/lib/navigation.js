@@ -8,7 +8,7 @@ function platformMenuItem(platform) {
 export function buildPlatformMenuChildren(platforms) {
   const items = Array.isArray(platforms) ? platforms.map(platformMenuItem) : []
   const geminiItem = {
-    key: '/gemini-console',
+    key: '/accounts/gemini',
     label: 'Gemini',
   }
 
