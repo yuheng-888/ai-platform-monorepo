@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from core.config_store import config_store
 from services import external_apps
+from embedded.gemini_business2api.shared_config import GEMINI_SHARED_MAIN_SITE_CONFIG_KEYS
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -10,13 +11,16 @@ CONFIG_KEYS = [
     "yescaptcha_key", "twocaptcha_key",
     "default_executor", "default_captcha_solver",
     "register_max_concurrency",
+    "register_domain",
     "register_resin_slots_per_ip_default",
     "register_resin_slots_per_ip_whitelist",
     "register_resin_slot_whitelist",
-    "duckmail_api_url", "duckmail_provider_url", "duckmail_bearer",
-    "freemail_api_url", "freemail_admin_token", "freemail_username", "freemail_password",
+    "duckmail_api_url", "duckmail_provider_url", "duckmail_bearer", "duckmail_verify_ssl",
+    "freemail_api_url", "freemail_admin_token", "freemail_username", "freemail_password", "freemail_domain", "freemail_verify_ssl",
     "moemail_api_url", "moemail_api_key", "moemail_domain",
     "mail_provider",
+    "gptmail_base_url", "gptmail_api_key", "gptmail_domain", "gptmail_verify_ssl",
+    "cfmail_base_url", "cfmail_api_key", "cfmail_domain", "cfmail_verify_ssl",
     "cfworker_api_url", "cfworker_admin_token", "cfworker_domain", "cfworker_fingerprint",
     "luckmail_base_url", "luckmail_api_key", "luckmail_email_type", "luckmail_domain",
     "cpa_api_url", "cpa_api_key",
@@ -73,6 +77,18 @@ def _restart_services_for_keys(updated_keys: set[str]) -> tuple[list[str], dict[
     return restarted, errors
 
 
+def _reload_embedded_gemini_for_keys(updated_keys: set[str]) -> list[str]:
+    if not (updated_keys & GEMINI_SHARED_MAIN_SITE_CONFIG_KEYS):
+        return []
+    try:
+        from embedded.gemini_business2api.core.config import config_manager
+
+        config_manager.reload()
+        return ["embedded-gemini"]
+    except Exception:
+        return []
+
+
 @router.get("")
 def get_config():
     all_cfg = config_store.get_all()
@@ -86,9 +102,11 @@ def update_config(body: ConfigUpdate):
     safe = {k: v for k, v in body.data.items() if k in CONFIG_KEYS}
     config_store.set_many(safe)
     restarted, restart_errors = _restart_services_for_keys(set(safe.keys()))
+    reloaded = _reload_embedded_gemini_for_keys(set(safe.keys()))
     return {
         "ok": True,
         "updated": list(safe.keys()),
         "restarted": restarted,
         "restart_errors": restart_errors,
+        "reloaded": reloaded,
     }

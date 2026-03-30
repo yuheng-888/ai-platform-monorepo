@@ -20,8 +20,26 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'DuckMail（自动生成）', value: 'duckmail' },
     { label: 'MoeMail', value: 'moemail' },
     { label: 'Freemail（自建 CF Worker）', value: 'freemail' },
+    { label: 'GPTMail', value: 'gptmail' },
+    { label: 'Cloudflare Mail', value: 'cfmail' },
     { label: 'CF Worker（自建域名）', value: 'cfworker' },
     { label: 'LuckMail（订单接码 / 已购邮箱）', value: 'luckmail' },
+  ],
+  duckmail_verify_ssl: [
+    { label: '开启', value: '1' },
+    { label: '关闭', value: '0' },
+  ],
+  freemail_verify_ssl: [
+    { label: '开启', value: '1' },
+    { label: '关闭', value: '0' },
+  ],
+  gptmail_verify_ssl: [
+    { label: '开启', value: '1' },
+    { label: '关闭', value: '0' },
+  ],
+  cfmail_verify_ssl: [
+    { label: '开启', value: '1' },
+    { label: '关闭', value: '0' },
   ],
   default_executor: [
     { label: 'API 协议（无浏览器）', value: 'protocol' },
@@ -92,6 +110,8 @@ const TAB_ITEMS = [
           { key: 'freemail_admin_token', label: '管理员令牌', secret: true },
           { key: 'freemail_username', label: '用户名（可选）' },
           { key: 'freemail_password', label: '密码（可选）', secret: true },
+          { key: 'freemail_domain', label: '邮箱域名（可选）', placeholder: 'freemail.local' },
+          { key: 'freemail_verify_ssl', label: 'SSL 校验', type: 'select' },
         ],
       },
       {
@@ -115,6 +135,28 @@ const TAB_ITEMS = [
           { key: 'duckmail_api_url', label: 'Web URL', placeholder: 'https://www.duckmail.sbs' },
           { key: 'duckmail_provider_url', label: 'Provider URL', placeholder: 'https://api.duckmail.sbs' },
           { key: 'duckmail_bearer', label: 'Bearer Token', placeholder: 'kevin273945', secret: true },
+          { key: 'register_domain', label: '首选域名（Gemini 可选）', placeholder: '留空则自动选择' },
+          { key: 'duckmail_verify_ssl', label: 'SSL 校验', type: 'select' },
+        ],
+      },
+      {
+        title: 'GPTMail',
+        desc: 'Gemini 与主站共用的 GPTMail 邮箱配置',
+        fields: [
+          { key: 'gptmail_base_url', label: 'API URL', placeholder: 'https://mail.chatgpt.org.uk' },
+          { key: 'gptmail_api_key', label: 'API Key', secret: true },
+          { key: 'gptmail_domain', label: '邮箱域名（可选）', placeholder: 'mail.example.com' },
+          { key: 'gptmail_verify_ssl', label: 'SSL 校验', type: 'select' },
+        ],
+      },
+      {
+        title: 'Cloudflare Mail',
+        desc: 'Gemini 与主站共用的 Cloudflare Mail 配置',
+        fields: [
+          { key: 'cfmail_base_url', label: 'API URL', placeholder: 'https://cfmail.example.com' },
+          { key: 'cfmail_api_key', label: '访问密码', secret: true, placeholder: 'x-custom-auth' },
+          { key: 'cfmail_domain', label: '邮箱域名（可选）', placeholder: 'cfmail.example.com' },
+          { key: 'cfmail_verify_ssl', label: 'SSL 校验', type: 'select' },
         ],
       },
       {

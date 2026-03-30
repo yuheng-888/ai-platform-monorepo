@@ -87,6 +87,21 @@ class BaseMailbox(ABC):
         ...
 
 
+def _parse_bool_like(value: Any, default: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return value != 0
+    lowered = str(value).strip().lower()
+    if lowered in ("1", "true", "yes", "y", "on"):
+        return True
+    if lowered in ("0", "false", "no", "n", "off"):
+        return False
+    return default
+
+
 def create_mailbox(provider: str, extra: dict = None, proxy: str = None) -> 'BaseMailbox':
     """工厂方法：根据 provider 创建对应的 mailbox 实例"""
     extra = extra or {}
@@ -97,6 +112,7 @@ def create_mailbox(provider: str, extra: dict = None, proxy: str = None) -> 'Bas
             api_url=extra.get("duckmail_api_url", "https://www.duckmail.sbs"),
             provider_url=extra.get("duckmail_provider_url", "https://api.duckmail.sbs"),
             bearer=extra.get("duckmail_bearer", "kevin273945"),
+            verify_ssl=_parse_bool_like(extra.get("duckmail_verify_ssl"), True),
             proxy=proxy,
         )
     elif provider == "freemail":
@@ -105,6 +121,7 @@ def create_mailbox(provider: str, extra: dict = None, proxy: str = None) -> 'Bas
             admin_token=extra.get("freemail_admin_token", ""),
             username=extra.get("freemail_username", ""),
             password=extra.get("freemail_password", ""),
+            verify_ssl=_parse_bool_like(extra.get("freemail_verify_ssl"), True),
             proxy=proxy,
         )
     elif provider == "moemail":
@@ -129,6 +146,22 @@ def create_mailbox(provider: str, extra: dict = None, proxy: str = None) -> 'Bas
             project_code=extra.get("luckmail_project_code", ""),
             email_type=extra.get("luckmail_email_type", ""),
             domain=extra.get("luckmail_domain", ""),
+        )
+    elif provider == "gptmail":
+        return GptMailMailbox(
+            base_url=extra.get("gptmail_base_url", "https://mail.chatgpt.org.uk"),
+            api_key=extra.get("gptmail_api_key", ""),
+            domain=extra.get("gptmail_domain", ""),
+            verify_ssl=_parse_bool_like(extra.get("gptmail_verify_ssl"), True),
+            proxy=proxy,
+        )
+    elif provider == "cfmail":
+        return CfMailMailbox(
+            base_url=extra.get("cfmail_base_url", ""),
+            api_key=extra.get("cfmail_api_key", ""),
+            domain=extra.get("cfmail_domain", ""),
+            verify_ssl=_parse_bool_like(extra.get("cfmail_verify_ssl"), True),
+            proxy=proxy,
         )
     else:  # laoudo
         return LaoudoMailbox(
@@ -328,10 +361,12 @@ class DuckMailMailbox(BaseMailbox):
     def __init__(self, api_url: str = "https://www.duckmail.sbs",
                  provider_url: str = "https://api.duckmail.sbs",
                  bearer: str = "kevin273945",
+                 verify_ssl: bool = True,
                  proxy: str = None):
         self.api = api_url.rstrip("/")
         self.provider_url = provider_url
         self.bearer = bearer
+        self.verify_ssl = verify_ssl
         self.proxy = {"http": proxy, "https": proxy} if proxy else None
         self._token = None
         self._address = None
@@ -352,13 +387,13 @@ class DuckMailMailbox(BaseMailbox):
         # 创建账号
         r = requests.post(f"{self.api}/api/mail?endpoint=%2Faccounts",
             json={"address": address, "password": password},
-            headers=self._common_headers(), proxies=self.proxy, timeout=15)
+            headers=self._common_headers(), proxies=self.proxy, timeout=15, verify=self.verify_ssl)
         data = r.json()
         self._address = data.get("address", address)
         # 登录获取 token
         r2 = requests.post(f"{self.api}/api/mail?endpoint=%2Ftoken",
             json={"address": self._address, "password": password},
-            headers=self._common_headers(), proxies=self.proxy, timeout=15)
+            headers=self._common_headers(), proxies=self.proxy, timeout=15, verify=self.verify_ssl)
         self._token = r2.json().get("token", "")
         return MailboxAccount(email=self._address, account_id=self._token)
 
@@ -368,7 +403,7 @@ class DuckMailMailbox(BaseMailbox):
             r = requests.get(f"{self.api}/api/mail?endpoint=%2Fmessages%3Fpage%3D1",
                 headers={"authorization": f"Bearer {account.account_id}",
                          "x-api-provider-base-url": self.provider_url},
-                proxies=self.proxy, timeout=10)
+                proxies=self.proxy, timeout=10, verify=self.verify_ssl)
             return {str(m["id"]) for m in r.json().get("hydra:member", [])}
         except Exception:
             return set()
@@ -383,7 +418,7 @@ class DuckMailMailbox(BaseMailbox):
                 r = requests.get(f"{self.api}/api/mail?endpoint=%2Fmessages%3Fpage%3D1",
                     headers={"authorization": f"Bearer {account.account_id}",
                              "x-api-provider-base-url": self.provider_url},
-                    proxies=self.proxy, timeout=10)
+                    proxies=self.proxy, timeout=10, verify=self.verify_ssl)
                 msgs = r.json().get("hydra:member", [])
                 for msg in msgs:
                     mid = str(msg.get("id") or msg.get("msgid") or "")
@@ -394,7 +429,7 @@ class DuckMailMailbox(BaseMailbox):
                         r2 = requests.get(f"{self.api}/api/mail?endpoint=%2Fmessages%2F{mid}",
                             headers={"authorization": f"Bearer {account.account_id}",
                                      "x-api-provider-base-url": self.provider_url},
-                            proxies=self.proxy, timeout=10)
+                            proxies=self.proxy, timeout=10, verify=self.verify_ssl)
                         detail = r2.json()
                         body = str(detail.get("text") or "") + " " + str(detail.get("subject") or "")
                     except Exception:
@@ -994,11 +1029,13 @@ class FreemailMailbox(BaseMailbox):
 
     def __init__(self, api_url: str, admin_token: str = "",
                  username: str = "", password: str = "",
+                 verify_ssl: bool = True,
                  proxy: str = None):
         self.api = api_url.rstrip("/")
         self.admin_token = admin_token
         self.username = username
         self.password = password
+        self.verify_ssl = verify_ssl
         self.proxy = {"http": proxy, "https": proxy} if proxy else None
         self._session = None
         self._email = None
@@ -1007,12 +1044,13 @@ class FreemailMailbox(BaseMailbox):
         import requests
         s = requests.Session()
         s.proxies = self.proxy
+        s.verify = self.verify_ssl
         if self.admin_token:
             s.headers.update({"Authorization": f"Bearer {self.admin_token}"})
         elif self.username and self.password:
             s.post(f"{self.api}/api/login",
                 json={"username": self.username, "password": self.password},
-                timeout=15)
+                timeout=15, verify=self.verify_ssl)
         self._session = s
         return s
 
@@ -1056,6 +1094,278 @@ class FreemailMailbox(BaseMailbox):
                     text = str(msg.get("preview", "")) + " " + str(msg.get("subject", ""))
                     code = self._safe_extract(text, code_pattern)
                     if code: return code
+            except Exception:
+                pass
+            time.sleep(3)
+        raise TimeoutError(f"等待验证码超时 ({timeout}s)")
+
+
+class GptMailMailbox(BaseMailbox):
+    """GPTMail 临时邮箱服务"""
+
+    def __init__(
+        self,
+        base_url: str = "https://mail.chatgpt.org.uk",
+        api_key: str = "",
+        domain: str = "",
+        verify_ssl: bool = True,
+        proxy: str = None,
+    ):
+        from types import SimpleNamespace
+
+        self.client = SimpleNamespace(
+            base_url=(base_url or "https://mail.chatgpt.org.uk").rstrip("/"),
+            api_key=(api_key or "").strip(),
+            domain=(domain or "").strip(),
+            verify_ssl=verify_ssl,
+            proxy_url=(proxy or "").strip(),
+            email=None,
+        )
+
+    def _request(self, method: str, path: str, **kwargs):
+        import requests
+
+        headers = kwargs.pop("headers", None) or {}
+        if self.client.api_key and "X-API-Key" not in headers:
+            headers["X-API-Key"] = self.client.api_key
+        proxies = (
+            {"http": self.client.proxy_url, "https": self.client.proxy_url}
+            if self.client.proxy_url
+            else None
+        )
+        return requests.request(
+            method,
+            f"{self.client.base_url}{path}",
+            headers=headers,
+            proxies=proxies,
+            verify=self.client.verify_ssl,
+            timeout=kwargs.pop("timeout", 15),
+            **kwargs,
+        )
+
+    def get_email(self) -> MailboxAccount:
+        import random
+        import string
+        import time
+
+        rand = "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
+        prefix = f"t{str(int(time.time()))[-4:]}{rand}"
+        payload = {"prefix": prefix}
+        if self.client.domain:
+            payload["domain"] = self.client.domain
+        response = self._request("POST", "/api/generate-email", json=payload)
+        data = response.json() if hasattr(response, "json") else {}
+        email = ((data.get("data") or {}).get("email") or "").strip()
+        if not email:
+            raise RuntimeError(f"GPTMail 生成邮箱失败: {data}")
+        self.client.email = email
+        return MailboxAccount(email=email, account_id=email)
+
+    def get_current_ids(self, account: MailboxAccount) -> set:
+        try:
+            response = self._request("GET", "/api/emails", params={"email": account.email})
+            data = response.json() if hasattr(response, "json") else {}
+            emails = ((data.get("data") or {}).get("emails") or []) if isinstance(data, dict) else []
+            return {
+                str(item.get("id") or "")
+                for item in emails
+                if item.get("id")
+            }
+        except Exception:
+            return set()
+
+    def wait_for_code(
+        self,
+        account: MailboxAccount,
+        keyword: str = "",
+        timeout: int = 120,
+        before_ids: set = None,
+        code_pattern: str = None,
+        **kwargs,
+    ) -> str:
+        import time
+
+        seen = set(before_ids or [])
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                response = self._request("GET", "/api/emails", params={"email": account.email})
+                data = response.json() if hasattr(response, "json") else {}
+                emails = ((data.get("data") or {}).get("emails") or []) if isinstance(data, dict) else []
+                emails = sorted(emails, key=lambda item: int(item.get("timestamp") or 0), reverse=True)
+                for item in emails:
+                    message_id = str(item.get("id") or "")
+                    if not message_id or message_id in seen:
+                        continue
+                    seen.add(message_id)
+                    texts = [
+                        str(item.get("subject") or ""),
+                        str(item.get("content") or ""),
+                        str(item.get("html_content") or ""),
+                    ]
+                    detail_response = self._request("GET", f"/api/email/{message_id}")
+                    detail = detail_response.json().get("data") if hasattr(detail_response, "json") else None
+                    if isinstance(detail, dict):
+                        texts.extend(
+                            [
+                                str(detail.get("content") or ""),
+                                str(detail.get("html_content") or ""),
+                                str(detail.get("raw_content") or ""),
+                            ]
+                        )
+                    text = " ".join(part for part in texts if part)
+                    if keyword and keyword.lower() not in text.lower():
+                        continue
+                    code = self._safe_extract(text, code_pattern)
+                    if code:
+                        return code
+            except Exception:
+                pass
+            time.sleep(3)
+        raise TimeoutError(f"等待验证码超时 ({timeout}s)")
+
+
+class CfMailMailbox(BaseMailbox):
+    """Cloudflare Mail 临时邮箱服务"""
+
+    def __init__(
+        self,
+        base_url: str = "",
+        api_key: str = "",
+        domain: str = "",
+        verify_ssl: bool = True,
+        proxy: str = None,
+    ):
+        from types import SimpleNamespace
+
+        self.client = SimpleNamespace(
+            base_url=(base_url or "").rstrip("/"),
+            api_key=(api_key or "").strip(),
+            domain=(domain or "").strip(),
+            verify_ssl=verify_ssl,
+            proxy_url=(proxy or "").strip(),
+            email=None,
+            jwt_token=None,
+        )
+
+    def _request(self, method: str, path: str, **kwargs):
+        import requests
+
+        headers = kwargs.pop("headers", None) or {}
+        if self.client.api_key and "authorization" not in {key.lower() for key in headers} and "x-admin-auth" not in {key.lower() for key in headers}:
+            headers["x-admin-auth"] = self.client.api_key
+        if self.client.jwt_token and "authorization" not in {key.lower() for key in headers}:
+            headers["Authorization"] = f"Bearer {self.client.jwt_token}"
+        proxies = (
+            {"http": self.client.proxy_url, "https": self.client.proxy_url}
+            if self.client.proxy_url
+            else None
+        )
+        return requests.request(
+            method,
+            f"{self.client.base_url}{path}",
+            headers=headers,
+            proxies=proxies,
+            verify=self.client.verify_ssl,
+            timeout=kwargs.pop("timeout", 30),
+            **kwargs,
+        )
+
+    def _prepare_client(self, account: MailboxAccount) -> None:
+        self.client.email = account.email
+        self.client.jwt_token = account.account_id
+
+    def _get_available_domains(self) -> list:
+        try:
+            response = self._request("GET", "/open_api/settings")
+            data = response.json() if hasattr(response, "json") else {}
+            domains = data.get("domains", []) if isinstance(data, dict) else []
+            if isinstance(domains, list):
+                return [str(item).strip() for item in domains if str(item).strip()]
+        except Exception:
+            pass
+        return []
+
+    def get_email(self) -> MailboxAccount:
+        import random
+        import string
+        import time
+
+        selected_domain = self.client.domain
+        if not selected_domain:
+            domains = self._get_available_domains()
+            if domains:
+                selected_domain = random.choice(domains)
+        name = f"t{str(int(time.time()))[-4:]}{''.join(random.choices(string.ascii_lowercase + string.digits, k=10))}"
+        payload = {"name": name}
+        if selected_domain:
+            payload["domain"] = selected_domain
+        response = self._request("POST", "/admin/new_address", json=payload)
+        data = response.json() if hasattr(response, "json") else {}
+        address = str(data.get("address") or "").strip()
+        jwt_token = str(data.get("jwt") or "").strip()
+        if not address or not jwt_token:
+            raise RuntimeError(f"CFMail 生成邮箱失败: {data}")
+        self.client.email = address
+        self.client.jwt_token = jwt_token
+        return MailboxAccount(
+            email=address,
+            account_id=jwt_token,
+            extra={"jwt_token": jwt_token},
+        )
+
+    def get_current_ids(self, account: MailboxAccount) -> set:
+        self._prepare_client(account)
+        try:
+            response = self._request("GET", "/api/mails", params={"limit": 20, "offset": 0})
+            data = response.json() if hasattr(response, "json") else {}
+            items = data.get("results", []) if isinstance(data, dict) else []
+            return {str(item.get("id") or "") for item in items if item.get("id")}
+        except Exception:
+            return set()
+
+    def wait_for_code(
+        self,
+        account: MailboxAccount,
+        keyword: str = "",
+        timeout: int = 120,
+        before_ids: set = None,
+        code_pattern: str = None,
+        **kwargs,
+    ) -> str:
+        import time
+
+        self._prepare_client(account)
+        seen = set(before_ids or [])
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                response = self._request("GET", "/api/mails", params={"limit": 20, "offset": 0})
+                data = response.json() if hasattr(response, "json") else {}
+                messages = data.get("results", []) if isinstance(data, dict) else []
+                for item in sorted(messages, key=lambda current: int(current.get("id") or 0), reverse=True):
+                    message_id = str(item.get("id") or "")
+                    if not message_id or message_id in seen:
+                        continue
+                    seen.add(message_id)
+                    texts = [
+                        str(item.get("subject") or ""),
+                        str(item.get("text") or ""),
+                        str(item.get("html") or ""),
+                    ]
+                    raw = item.get("raw")
+                    if raw:
+                        texts.append(self._decode_raw_content(str(raw)))
+                    detail_response = self._request("GET", f"/api/mail/{message_id}")
+                    if hasattr(detail_response, "json"):
+                        detail = detail_response.json() or {}
+                        texts.append(self._decode_raw_content(str(detail.get("raw") or "")))
+                    text = " ".join(part for part in texts if part)
+                    if keyword and keyword.lower() not in text.lower():
+                        continue
+                    code = self._safe_extract(text, code_pattern)
+                    if code:
+                        return code
             except Exception:
                 pass
             time.sleep(3)

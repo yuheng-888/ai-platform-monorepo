@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, validator
 from dotenv import load_dotenv
 
 from embedded.gemini_business2api.core import storage
+from embedded.gemini_business2api.shared_config import apply_main_site_shared_config
 
 # 加载 .env 文件
 load_dotenv()
@@ -322,6 +323,12 @@ class ConfigManager:
         """
         # 1. 从数据库加载配置
         yaml_data = self._load_yaml()
+        try:
+            from core.config_store import config_store
+
+            apply_main_site_shared_config(yaml_data, config_store.get_all())
+        except Exception:
+            pass
 
         # 2. 加载安全配置（仅从环境变量，不允许 Web 修改）
         security_config = SecurityConfig(

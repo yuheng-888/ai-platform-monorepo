@@ -54,10 +54,22 @@ export default function Register() {
         duckmail_api_url: cfg.duckmail_api_url || '',
         duckmail_provider_url: cfg.duckmail_provider_url || '',
         duckmail_bearer: cfg.duckmail_bearer || '',
+        duckmail_verify_ssl: cfg.duckmail_verify_ssl || '1',
+        register_domain: cfg.register_domain || '',
         freemail_api_url: cfg.freemail_api_url || '',
         freemail_admin_token: cfg.freemail_admin_token || '',
         freemail_username: cfg.freemail_username || '',
         freemail_password: cfg.freemail_password || '',
+        freemail_domain: cfg.freemail_domain || '',
+        freemail_verify_ssl: cfg.freemail_verify_ssl || '1',
+        gptmail_base_url: cfg.gptmail_base_url || '',
+        gptmail_api_key: cfg.gptmail_api_key || '',
+        gptmail_domain: cfg.gptmail_domain || '',
+        gptmail_verify_ssl: cfg.gptmail_verify_ssl || '1',
+        cfmail_base_url: cfg.cfmail_base_url || '',
+        cfmail_api_key: cfg.cfmail_api_key || '',
+        cfmail_domain: cfg.cfmail_domain || '',
+        cfmail_verify_ssl: cfg.cfmail_verify_ssl || '1',
         cfworker_api_url: cfg.cfworker_api_url || '',
         cfworker_admin_token: cfg.cfworker_admin_token || '',
         cfworker_domain: cfg.cfworker_domain || '',
@@ -95,10 +107,22 @@ export default function Register() {
           duckmail_api_url: values.duckmail_api_url,
           duckmail_provider_url: values.duckmail_provider_url,
           duckmail_bearer: values.duckmail_bearer,
+          duckmail_verify_ssl: values.duckmail_verify_ssl,
+          register_domain: values.register_domain,
           freemail_api_url: values.freemail_api_url,
           freemail_admin_token: values.freemail_admin_token,
           freemail_username: values.freemail_username,
           freemail_password: values.freemail_password,
+          freemail_domain: values.freemail_domain,
+          freemail_verify_ssl: values.freemail_verify_ssl,
+          gptmail_base_url: values.gptmail_base_url,
+          gptmail_api_key: values.gptmail_api_key,
+          gptmail_domain: values.gptmail_domain,
+          gptmail_verify_ssl: values.gptmail_verify_ssl,
+          cfmail_base_url: values.cfmail_base_url,
+          cfmail_api_key: values.cfmail_api_key,
+          cfmail_domain: values.cfmail_domain,
+          cfmail_verify_ssl: values.cfmail_verify_ssl,
           cfworker_api_url: values.cfworker_api_url,
           cfworker_admin_token: values.cfworker_admin_token,
           cfworker_domain: values.cfworker_domain,
@@ -220,6 +244,8 @@ export default function Register() {
                 { value: 'tempmail_lol', label: 'TempMail.lol' },
                 { value: 'duckmail', label: 'DuckMail' },
                 { value: 'freemail', label: 'Freemail' },
+                { value: 'gptmail', label: 'GPTMail' },
+                { value: 'cfmail', label: 'Cloudflare Mail' },
                 { value: 'laoudo', label: 'Laoudo' },
                 { value: 'cfworker', label: 'CF Worker' },
                 { value: 'luckmail', label: 'LuckMail' },
@@ -236,6 +262,99 @@ export default function Register() {
               </Form.Item>
               <Form.Item name="moemail_domain" label="指定域名（可选）">
                 <Input placeholder="moemail.app" />
+              </Form.Item>
+            </>
+          )}
+          {mailProvider === 'duckmail' && (
+            <>
+              <Form.Item name="duckmail_api_url" label="Web URL">
+                <Input placeholder="https://www.duckmail.sbs" />
+              </Form.Item>
+              <Form.Item name="duckmail_provider_url" label="Provider URL">
+                <Input placeholder="https://api.duckmail.sbs" />
+              </Form.Item>
+              <Form.Item name="duckmail_bearer" label="Bearer Token">
+                <Input.Password placeholder="kevin273945" />
+              </Form.Item>
+              <Form.Item name="register_domain" label="首选域名（可选）">
+                <Input placeholder="留空则自动选择" />
+              </Form.Item>
+              <Form.Item name="duckmail_verify_ssl" label="SSL 校验">
+                <Select
+                  options={[
+                    { value: '1', label: '开启' },
+                    { value: '0', label: '关闭' },
+                  ]}
+                />
+              </Form.Item>
+            </>
+          )}
+          {mailProvider === 'freemail' && (
+            <>
+              <Form.Item name="freemail_api_url" label="API URL">
+                <Input placeholder="https://mail.example.com" />
+              </Form.Item>
+              <Form.Item name="freemail_admin_token" label="管理员 Token">
+                <Input.Password placeholder="eyJ..." />
+              </Form.Item>
+              <Form.Item name="freemail_username" label="用户名（可选）">
+                <Input placeholder="admin" />
+              </Form.Item>
+              <Form.Item name="freemail_password" label="密码（可选）">
+                <Input.Password placeholder="password" />
+              </Form.Item>
+              <Form.Item name="freemail_domain" label="邮箱域名（可选）">
+                <Input placeholder="freemail.local" />
+              </Form.Item>
+              <Form.Item name="freemail_verify_ssl" label="SSL 校验">
+                <Select
+                  options={[
+                    { value: '1', label: '开启' },
+                    { value: '0', label: '关闭' },
+                  ]}
+                />
+              </Form.Item>
+            </>
+          )}
+          {mailProvider === 'gptmail' && (
+            <>
+              <Form.Item name="gptmail_base_url" label="API URL">
+                <Input placeholder="https://mail.chatgpt.org.uk" />
+              </Form.Item>
+              <Form.Item name="gptmail_api_key" label="API Key">
+                <Input.Password placeholder="X-API-Key" />
+              </Form.Item>
+              <Form.Item name="gptmail_domain" label="邮箱域名（可选）">
+                <Input placeholder="mail.example.com" />
+              </Form.Item>
+              <Form.Item name="gptmail_verify_ssl" label="SSL 校验">
+                <Select
+                  options={[
+                    { value: '1', label: '开启' },
+                    { value: '0', label: '关闭' },
+                  ]}
+                />
+              </Form.Item>
+            </>
+          )}
+          {mailProvider === 'cfmail' && (
+            <>
+              <Form.Item name="cfmail_base_url" label="API URL">
+                <Input placeholder="https://cfmail.example.com" />
+              </Form.Item>
+              <Form.Item name="cfmail_api_key" label="访问密码">
+                <Input.Password placeholder="x-custom-auth" />
+              </Form.Item>
+              <Form.Item name="cfmail_domain" label="邮箱域名（可选）">
+                <Input placeholder="cfmail.example.com" />
+              </Form.Item>
+              <Form.Item name="cfmail_verify_ssl" label="SSL 校验">
+                <Select
+                  options={[
+                    { value: '1', label: '开启' },
+                    { value: '0', label: '关闭' },
+                  ]}
+                />
               </Form.Item>
             </>
           )}

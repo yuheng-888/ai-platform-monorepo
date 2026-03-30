@@ -42,6 +42,11 @@ const MAIL_PROVIDER_OPTIONS = [
   { label: 'Cloudflare Mail', value: 'cfmail' },
 ]
 
+const VERIFY_SSL_OPTIONS = [
+  { label: '开启', value: '1' },
+  { label: '关闭', value: '0' },
+]
+
 type GeminiStatus = {
   name: string
   mount_path: string
@@ -142,15 +147,26 @@ type RegisterFormValues = {
 
 type GeminiSharedSettingsValues = {
   register_max_concurrency?: number
+  register_domain?: string
   mail_provider?: string
+  duckmail_verify_ssl?: string
   moemail_api_url?: string
   moemail_api_key?: string
   moemail_domain?: string
   freemail_api_url?: string
   freemail_admin_token?: string
   freemail_domain?: string
+  freemail_verify_ssl?: string
   duckmail_provider_url?: string
   duckmail_bearer?: string
+  gptmail_base_url?: string
+  gptmail_api_key?: string
+  gptmail_domain?: string
+  gptmail_verify_ssl?: string
+  cfmail_base_url?: string
+  cfmail_api_key?: string
+  cfmail_domain?: string
+  cfmail_verify_ssl?: string
 }
 
 type GeminiNativeSettingsValues = {
@@ -159,7 +175,6 @@ type GeminiNativeSettingsValues = {
   proxy_for_auth?: string
   proxy_for_chat?: string
   browser_mode?: string
-  register_domain?: string
   register_default_count?: number
   register_default_concurrency?: number
   refresh_window_hours?: number
@@ -169,7 +184,7 @@ type GeminiNativeSettingsValues = {
   chat_url?: string
 }
 
-const GEMINI_SHARED_MAIL_PROVIDERS = new Set(['duckmail', 'moemail', 'freemail'])
+const GEMINI_SHARED_MAIL_PROVIDERS = new Set(['duckmail', 'moemail', 'freemail', 'gptmail', 'cfmail'])
 
 async function geminiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers || {})
@@ -313,15 +328,26 @@ export default function GeminiPage() {
 
       sharedSettingsForm.setFieldsValue({
         register_max_concurrency: Number.parseInt(String(globalConfig.register_max_concurrency || basic.register_max_concurrency || 5), 10) || 5,
+        register_domain: globalConfig.register_domain || basic.register_domain || '',
         mail_provider: globalConfig.mail_provider || basic.temp_mail_provider || 'duckmail',
+        duckmail_verify_ssl: String(globalConfig.duckmail_verify_ssl || (basic.duckmail_verify_ssl === false ? '0' : '1')),
         moemail_api_url: globalConfig.moemail_api_url || basic.moemail_base_url || '',
         moemail_api_key: globalConfig.moemail_api_key || basic.moemail_api_key || '',
         moemail_domain: globalConfig.moemail_domain || basic.moemail_domain || '',
         freemail_api_url: globalConfig.freemail_api_url || basic.freemail_base_url || '',
         freemail_admin_token: globalConfig.freemail_admin_token || basic.freemail_jwt_token || '',
         freemail_domain: globalConfig.freemail_domain || basic.freemail_domain || '',
+        freemail_verify_ssl: String(globalConfig.freemail_verify_ssl || (basic.freemail_verify_ssl === false ? '0' : '1')),
         duckmail_provider_url: globalConfig.duckmail_provider_url || basic.duckmail_base_url || '',
         duckmail_bearer: globalConfig.duckmail_bearer || basic.duckmail_api_key || '',
+        gptmail_base_url: globalConfig.gptmail_base_url || basic.gptmail_base_url || '',
+        gptmail_api_key: globalConfig.gptmail_api_key || basic.gptmail_api_key || '',
+        gptmail_domain: globalConfig.gptmail_domain || basic.gptmail_domain || '',
+        gptmail_verify_ssl: String(globalConfig.gptmail_verify_ssl || (basic.gptmail_verify_ssl === false ? '0' : '1')),
+        cfmail_base_url: globalConfig.cfmail_base_url || basic.cfmail_base_url || '',
+        cfmail_api_key: globalConfig.cfmail_api_key || basic.cfmail_api_key || '',
+        cfmail_domain: globalConfig.cfmail_domain || basic.cfmail_domain || '',
+        cfmail_verify_ssl: String(globalConfig.cfmail_verify_ssl || (basic.cfmail_verify_ssl === false ? '0' : '1')),
       })
 
       nativeSettingsForm.setFieldsValue({
@@ -330,7 +356,6 @@ export default function GeminiPage() {
         proxy_for_auth: basic.proxy_for_auth || '',
         proxy_for_chat: basic.proxy_for_chat || '',
         browser_mode: basic.browser_mode || 'normal',
-        register_domain: basic.register_domain || '',
         register_default_count: basic.register_default_count || 1,
         register_default_concurrency: basic.register_default_concurrency || basic.register_max_concurrency || 5,
         refresh_window_hours: basic.refresh_window_hours || 24,
@@ -358,15 +383,26 @@ export default function GeminiPage() {
         body: JSON.stringify({
           data: {
             register_max_concurrency: String(sharedValues.register_max_concurrency || 5),
+            register_domain: String(sharedValues.register_domain || ''),
             mail_provider: String(sharedValues.mail_provider || ''),
+            duckmail_verify_ssl: String(sharedValues.duckmail_verify_ssl || '1'),
             moemail_api_url: String(sharedValues.moemail_api_url || ''),
             moemail_api_key: String(sharedValues.moemail_api_key || ''),
             moemail_domain: String(sharedValues.moemail_domain || ''),
             freemail_api_url: String(sharedValues.freemail_api_url || ''),
             freemail_admin_token: String(sharedValues.freemail_admin_token || ''),
             freemail_domain: String(sharedValues.freemail_domain || ''),
+            freemail_verify_ssl: String(sharedValues.freemail_verify_ssl || '1'),
             duckmail_provider_url: String(sharedValues.duckmail_provider_url || ''),
             duckmail_bearer: String(sharedValues.duckmail_bearer || ''),
+            gptmail_base_url: String(sharedValues.gptmail_base_url || ''),
+            gptmail_api_key: String(sharedValues.gptmail_api_key || ''),
+            gptmail_domain: String(sharedValues.gptmail_domain || ''),
+            gptmail_verify_ssl: String(sharedValues.gptmail_verify_ssl || '1'),
+            cfmail_base_url: String(sharedValues.cfmail_base_url || ''),
+            cfmail_api_key: String(sharedValues.cfmail_api_key || ''),
+            cfmail_domain: String(sharedValues.cfmail_domain || ''),
+            cfmail_verify_ssl: String(sharedValues.cfmail_verify_ssl || '1'),
           },
         }),
       })
@@ -379,7 +415,6 @@ export default function GeminiPage() {
         proxy_for_auth: nativeValues.proxy_for_auth || '',
         proxy_for_chat: nativeValues.proxy_for_chat || '',
         browser_mode: nativeValues.browser_mode || 'normal',
-        register_domain: nativeValues.register_domain || '',
         register_default_count: nativeValues.register_default_count || 1,
         register_default_concurrency: nativeValues.register_default_concurrency || sharedValues.register_max_concurrency || 5,
         register_max_concurrency: sharedValues.register_max_concurrency || 5,
@@ -398,10 +433,25 @@ export default function GeminiPage() {
         basicPayload.freemail_base_url = sharedValues.freemail_api_url || ''
         basicPayload.freemail_jwt_token = sharedValues.freemail_admin_token || ''
         basicPayload.freemail_domain = sharedValues.freemail_domain || ''
+        basicPayload.freemail_verify_ssl = String(sharedValues.freemail_verify_ssl || '1') === '1'
       }
       if (selectedMailProvider === 'duckmail') {
         basicPayload.duckmail_base_url = sharedValues.duckmail_provider_url || ''
         basicPayload.duckmail_api_key = sharedValues.duckmail_bearer || ''
+        basicPayload.duckmail_verify_ssl = String(sharedValues.duckmail_verify_ssl || '1') === '1'
+        basicPayload.register_domain = sharedValues.register_domain || ''
+      }
+      if (selectedMailProvider === 'gptmail') {
+        basicPayload.gptmail_base_url = sharedValues.gptmail_base_url || ''
+        basicPayload.gptmail_api_key = sharedValues.gptmail_api_key || ''
+        basicPayload.gptmail_domain = sharedValues.gptmail_domain || ''
+        basicPayload.gptmail_verify_ssl = String(sharedValues.gptmail_verify_ssl || '1') === '1'
+      }
+      if (selectedMailProvider === 'cfmail') {
+        basicPayload.cfmail_base_url = sharedValues.cfmail_base_url || ''
+        basicPayload.cfmail_api_key = sharedValues.cfmail_api_key || ''
+        basicPayload.cfmail_domain = sharedValues.cfmail_domain || ''
+        basicPayload.cfmail_verify_ssl = String(sharedValues.cfmail_verify_ssl || '1') === '1'
       }
 
       await geminiFetch('/gemini/admin/settings', {
@@ -964,11 +1014,7 @@ export default function GeminiPage() {
                           <Form.Item name="mail_provider" label="共享邮箱渠道">
                             <Select
                               allowClear
-                              options={[
-                                { label: 'DuckMail', value: 'duckmail' },
-                                { label: 'MoeMail', value: 'moemail' },
-                                { label: 'Freemail', value: 'freemail' },
-                              ]}
+                              options={MAIL_PROVIDER_OPTIONS}
                             />
                           </Form.Item>
                         </Col>
@@ -1011,11 +1057,26 @@ export default function GeminiPage() {
                               <Input placeholder="freemail.local" />
                             </Form.Item>
                           </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="freemail_verify_ssl" label="Freemail SSL">
+                              <Select options={VERIFY_SSL_OPTIONS} />
+                            </Form.Item>
+                          </Col>
                         </Row>
                       ) : null}
 
                       {sharedMailProvider === 'duckmail' ? (
                         <Row gutter={16}>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="register_domain" label="DuckMail 首选域名">
+                              <Input placeholder="留空则自动选择" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="duckmail_verify_ssl" label="DuckMail SSL">
+                              <Select options={VERIFY_SSL_OPTIONS} />
+                            </Form.Item>
+                          </Col>
                           <Col xs={24} md={12}>
                             <Form.Item name="duckmail_provider_url" label="DuckMail Provider URL">
                               <Input placeholder="https://api.duckmail.sbs" />
@@ -1024,6 +1085,56 @@ export default function GeminiPage() {
                           <Col xs={24} md={12}>
                             <Form.Item name="duckmail_bearer" label="DuckMail Bearer">
                               <Input.Password placeholder="Bearer Token" />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                      ) : null}
+
+                      {sharedMailProvider === 'gptmail' ? (
+                        <Row gutter={16}>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="gptmail_base_url" label="GPTMail API URL">
+                              <Input placeholder="https://mail.chatgpt.org.uk" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="gptmail_api_key" label="GPTMail API Key">
+                              <Input.Password placeholder="X-API-Key" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="gptmail_domain" label="GPTMail 域名">
+                              <Input placeholder="mail.example.com" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="gptmail_verify_ssl" label="GPTMail SSL">
+                              <Select options={VERIFY_SSL_OPTIONS} />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                      ) : null}
+
+                      {sharedMailProvider === 'cfmail' ? (
+                        <Row gutter={16}>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="cfmail_base_url" label="CFMail API URL">
+                              <Input placeholder="https://cfmail.example.com" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="cfmail_api_key" label="CFMail 访问密码">
+                              <Input.Password placeholder="x-custom-auth" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="cfmail_domain" label="CFMail 域名">
+                              <Input placeholder="cfmail.example.com" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="cfmail_verify_ssl" label="CFMail SSL">
+                              <Select options={VERIFY_SSL_OPTIONS} />
                             </Form.Item>
                           </Col>
                         </Row>
@@ -1073,11 +1184,6 @@ export default function GeminiPage() {
                         <Col xs={24} md={8}>
                           <Form.Item name="register_default_concurrency" label="默认注册并发">
                             <InputNumber min={1} max={50} style={{ width: '100%' }} />
-                          </Form.Item>
-                        </Col>
-                        <Col xs={24} md={8}>
-                          <Form.Item name="register_domain" label="注册域名">
-                            <Input placeholder="可选" />
                           </Form.Item>
                         </Col>
                         <Col xs={24} md={8}>
