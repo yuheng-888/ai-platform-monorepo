@@ -18,6 +18,7 @@ import {
   Statistic,
   Table,
   Tag,
+  Tabs,
   Typography,
   message,
 } from 'antd'
@@ -94,6 +95,44 @@ type GeminiTask = {
   finished_at?: number | null
 }
 
+type GeminiSettingsPayload = Record<string, any>
+
+type GeminiLogEntry = {
+  time: string
+  level: string
+  message: string
+}
+
+type GeminiLogPayload = {
+  total: number
+  logs: GeminiLogEntry[]
+  stats?: {
+    memory?: {
+      total?: number
+      by_level?: Record<string, number>
+    }
+    chat_count?: number
+  }
+}
+
+type GeminiHistoryEntry = {
+  id: string
+  type: string
+  status: string
+  progress: number
+  total: number
+  success_count: number
+  fail_count: number
+  created_at?: number
+  finished_at?: number | null
+  is_live?: boolean
+}
+
+type GeminiHistoryPayload = {
+  total: number
+  history: GeminiHistoryEntry[]
+}
+
 type RegisterFormValues = {
   count: number
   concurrency: number
@@ -159,6 +198,13 @@ export default function GeminiPage() {
   const [accounts, setAccounts] = useState<GeminiAccount[]>([])
   const [registerTask, setRegisterTask] = useState<GeminiTask | null>(null)
   const [loginTask, setLoginTask] = useState<GeminiTask | null>(null)
+  const [activeTab, setActiveTab] = useState('accounts')
+  const [settingsText, setSettingsText] = useState('')
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
+  const [logData, setLogData] = useState<GeminiLogPayload | null>(null)
+  const [logsLoaded, setLogsLoaded] = useState(false)
+  const [historyData, setHistoryData] = useState<GeminiHistoryPayload | null>(null)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState('')
   const [error, setError] = useState('')
@@ -208,6 +254,104 @@ export default function GeminiPage() {
     }, 5000)
     return () => window.clearInterval(timer)
   }, [hasActiveTask])
+
+  useEffect(() => {
+    if (activeTab === 'settings' && !settingsLoaded) {
+      void loadSettings()
+    }
+    if (activeTab === 'logs' && !logsLoaded) {
+      void loadLogs()
+    }
+    if (activeTab === 'history' && !historyLoaded) {
+      void loadHistory()
+    }
+  }, [activeTab, historyLoaded, logsLoaded, settingsLoaded])
+
+  const loadSettings = async () => {
+    setActionLoading('load-settings')
+    try {
+      const data = await geminiFetch<GeminiSettingsPayload>('/gemini/admin/settings')
+      setSettingsText(JSON.stringify(data, null, 2))
+      setSettingsLoaded(true)
+    } catch (e: any) {
+      message.error(e?.message || '加载 Gemini 设置失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  const saveSettings = async () => {
+    setActionLoading('save-settings')
+    try {
+      const payload = JSON.parse(settingsText || '{}')
+      await geminiFetch('/gemini/admin/settings', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      })
+      message.success('Gemini 设置已保存')
+      setSettingsLoaded(true)
+    } catch (e: any) {
+      message.error(e?.message || '保存 Gemini 设置失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  const loadLogs = async () => {
+    setActionLoading('load-logs')
+    try {
+      const data = await geminiFetch<GeminiLogPayload>('/gemini/admin/log?limit=200')
+      setLogData(data)
+      setLogsLoaded(true)
+    } catch (e: any) {
+      message.error(e?.message || '加载 Gemini 日志失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  const clearLogs = async () => {
+    setActionLoading('clear-logs')
+    try {
+      await geminiFetch('/gemini/admin/log?confirm=yes', {
+        method: 'DELETE',
+      })
+      message.success('Gemini 日志已清空')
+      await loadLogs()
+    } catch (e: any) {
+      message.error(e?.message || '清空 Gemini 日志失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  const loadHistory = async () => {
+    setActionLoading('load-history')
+    try {
+      const data = await geminiFetch<GeminiHistoryPayload>('/gemini/admin/task-history?limit=100')
+      setHistoryData(data)
+      setHistoryLoaded(true)
+    } catch (e: any) {
+      message.error(e?.message || '加载 Gemini 任务历史失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
+  const clearHistory = async () => {
+    setActionLoading('clear-history')
+    try {
+      await geminiFetch('/gemini/admin/task-history?confirm=yes', {
+        method: 'DELETE',
+      })
+      message.success('Gemini 任务历史已清空')
+      await loadHistory()
+    } catch (e: any) {
+      message.error(e?.message || '清空 Gemini 任务历史失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
 
   const openRegisterModal = () => {
     registerForm.setFieldsValue({
@@ -392,6 +536,94 @@ export default function GeminiPage() {
     },
   ]
 
+  const logColumns: ColumnsType<GeminiLogEntry> = [
+    {
+      title: '时间',
+      dataIndex: 'time',
+      key: 'time',
+      width: 180,
+    },
+    {
+      title: '级别',
+      dataIndex: 'level',
+      key: 'level',
+      width: 100,
+      render: (value: string) => {
+        if (value === 'ERROR' || value === 'CRITICAL') return <Tag color="error">{value}</Tag>
+        if (value === 'WARNING') return <Tag color="warning">{value}</Tag>
+        return <Tag>{value}</Tag>
+      },
+    },
+    {
+      title: '消息',
+      dataIndex: 'message',
+      key: 'message',
+      render: (value: string) => (
+        <Text style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {value}
+        </Text>
+      ),
+    },
+  ]
+
+  const historyColumns: ColumnsType<GeminiHistoryEntry> = [
+    {
+      title: '任务 ID',
+      dataIndex: 'id',
+      key: 'id',
+      ellipsis: true,
+      render: (value: string) => (
+        <Text copyable={{ text: value }} style={{ fontFamily: 'monospace', fontSize: 12 }}>
+          {value}
+        </Text>
+      ),
+    },
+    {
+      title: '类型',
+      dataIndex: 'type',
+      key: 'type',
+      width: 100,
+      render: (value: string) => <Tag color={value === 'register' ? 'blue' : 'purple'}>{value}</Tag>,
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 120,
+      render: (value: string, record) => (
+        <Space size={6}>
+          {formatTaskStatus({ status: value })}
+          {record.is_live ? <Tag color="processing">实时</Tag> : null}
+        </Space>
+      ),
+    },
+    {
+      title: '进度',
+      key: 'progress',
+      width: 140,
+      render: (_, record) => `${record.progress ?? 0}/${record.total ?? 0}`,
+    },
+    {
+      title: '成功',
+      dataIndex: 'success_count',
+      key: 'success_count',
+      width: 90,
+    },
+    {
+      title: '失败',
+      dataIndex: 'fail_count',
+      key: 'fail_count',
+      width: 90,
+    },
+    {
+      title: '开始时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 180,
+      render: (value?: number) => (value ? new Date(value * 1000).toLocaleString('zh-CN') : '-'),
+    },
+  ]
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -531,21 +763,115 @@ export default function GeminiPage() {
         </Col>
       </Row>
 
-      <Card
-        title="Gemini 账号列表"
-        extra={accounts.length ? <Tag color="blue">{accounts.length} 个账号</Tag> : null}
-      >
-        {accounts.length ? (
-          <Table
-            rowKey="id"
-            columns={accountColumns}
-            dataSource={accounts}
-            pagination={{ pageSize: 8, hideOnSinglePage: true }}
-            scroll={{ x: 1100 }}
-          />
-        ) : (
-          <Empty description="暂无 Gemini 账号数据" />
-        )}
+      <Card bodyStyle={{ paddingTop: 8 }}>
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={[
+            {
+              key: 'accounts',
+              label: '账号',
+              children: accounts.length ? (
+                <Table
+                  rowKey="id"
+                  columns={accountColumns}
+                  dataSource={accounts}
+                  pagination={{ pageSize: 8, hideOnSinglePage: true }}
+                  scroll={{ x: 1100 }}
+                />
+              ) : (
+                <Empty description="暂无 Gemini 账号数据" />
+              ),
+            },
+            {
+              key: 'settings',
+              label: '设置',
+              children: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="这里直接编辑 Gemini 设置 JSON"
+                    description="这是主站里的原生设置入口。保存时会直接调用 Gemini 设置接口，不需要再跳回独立控制台。"
+                  />
+                  <Space wrap>
+                    <Button onClick={() => void loadSettings()} loading={actionLoading === 'load-settings'}>
+                      刷新设置
+                    </Button>
+                    <Button type="primary" onClick={() => void saveSettings()} loading={actionLoading === 'save-settings'}>
+                      保存设置
+                    </Button>
+                  </Space>
+                  <Input.TextArea
+                    value={settingsText}
+                    onChange={(event) => setSettingsText(event.target.value)}
+                    autoSize={{ minRows: 18, maxRows: 28 }}
+                    placeholder="Gemini 设置 JSON"
+                    style={{ fontFamily: 'monospace' }}
+                  />
+                </div>
+              ),
+            },
+            {
+              key: 'logs',
+              label: '日志',
+              children: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <Space wrap>
+                    <Button onClick={() => void loadLogs()} loading={actionLoading === 'load-logs'}>
+                      刷新日志
+                    </Button>
+                    <Popconfirm title="确认清空 Gemini 日志？" onConfirm={() => void clearLogs()}>
+                      <Button danger loading={actionLoading === 'clear-logs'}>
+                        清空日志
+                      </Button>
+                    </Popconfirm>
+                    <Text type="secondary">
+                      当前日志 {logData?.total ?? 0} 条，对话请求 {logData?.stats?.chat_count ?? 0} 次
+                    </Text>
+                  </Space>
+                  <Table
+                    rowKey={(record, index) => `${record.time}-${index}`}
+                    columns={logColumns}
+                    dataSource={logData?.logs || []}
+                    pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                    scroll={{ x: 900 }}
+                    locale={{ emptyText: '暂无 Gemini 日志' }}
+                  />
+                </div>
+              ),
+            },
+            {
+              key: 'history',
+              label: '任务历史',
+              children: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <Space wrap>
+                    <Button onClick={() => void loadHistory()} loading={actionLoading === 'load-history'}>
+                      刷新历史
+                    </Button>
+                    <Popconfirm title="确认清空 Gemini 任务历史？" onConfirm={() => void clearHistory()}>
+                      <Button danger loading={actionLoading === 'clear-history'}>
+                        清空历史
+                      </Button>
+                    </Popconfirm>
+                    <Text type="secondary">
+                      当前记录 {historyData?.total ?? 0} 条
+                    </Text>
+                  </Space>
+                  <Table
+                    rowKey="id"
+                    columns={historyColumns}
+                    dataSource={historyData?.history || []}
+                    pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                    scroll={{ x: 1000 }}
+                    locale={{ emptyText: '暂无 Gemini 任务历史' }}
+                  />
+                </div>
+              ),
+            },
+          ]}
+        />
       </Card>
 
       {!status?.ui_available ? (
