@@ -1,0 +1,74 @@
+services:
+  main-site:
+    build:
+      context: ../../apps/main-site
+    container_name: ai-main-site
+    restart: unless-stopped
+    ports:
+      - "${MAIN_SITE_PORT:-39001}:8000"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - HOST=0.0.0.0
+      - PORT=8000
+    volumes:
+      - main_site_data:/app/data
+      - main_site_logs:/app/logs
+
+  cliproxyapi:
+    build:
+      context: ../../apps/cliproxyapi
+    container_name: ai-cliproxyapi
+    restart: unless-stopped
+    ports:
+      - "${CLIPROXYAPI_PORT:-8317}:8317"
+    volumes:
+      - ../../apps/cliproxyapi/config.example.yaml:/CLIProxyAPI/config.yaml:ro
+      - cliproxyapi_auths:/root/.cli-proxy-api
+      - cliproxyapi_logs:/CLIProxyAPI/logs
+
+  cpa-cleanup:
+    build:
+      context: ../../apps/cpa-cleanup
+    container_name: ai-cpa-cleanup
+    restart: unless-stopped
+    ports:
+      - "${CPA_CLEANUP_PORT:-39023}:8123"
+    environment:
+      - CPA_WEB_HOST=0.0.0.0
+      - CPA_WEB_PORT=8123
+
+  resin:
+    build:
+      context: ../../apps/resin
+    container_name: ai-resin
+    restart: unless-stopped
+    ports:
+      - "${RESIN_PORT:-39024}:2260"
+    environment:
+      - RESIN_ADMIN_TOKEN=${RESIN_ADMIN_TOKEN:-change-me-admin-token}
+      - RESIN_PROXY_TOKEN=${RESIN_PROXY_TOKEN:-change-me-proxy-token}
+    volumes:
+      - resin_cache:/var/cache/resin
+      - resin_data:/var/lib/resin
+      - resin_logs:/var/log/resin
+
+  goproxy:
+    build:
+      context: ../../apps/goproxy
+    container_name: ai-goproxy
+    restart: unless-stopped
+    ports:
+      - "${GOPROXY_STABLE_PORT:-7776}:7776"
+      - "${GOPROXY_RANDOM_PORT:-7777}:7777"
+      - "${GOPROXY_WEBUI_PORT:-7778}:7778"
+      - "${GOPROXY_SOCKS5_RANDOM_PORT:-7779}:7779"
+      - "${GOPROXY_SOCKS5_STABLE_PORT:-7780}:7780"
+
+volumes:
+  main_site_data:
+  main_site_logs:
+  cliproxyapi_auths:
+  cliproxyapi_logs:
+  resin_cache:
+  resin_data:
+  resin_logs:

@@ -1,0 +1,665 @@
+import { useEffect, useState } from 'react'
+import { Card, Form, Input, Select, Button, message, Tabs, Space, Tag, Typography, Modal } from 'antd'
+import {
+  SaveOutlined,
+  EyeOutlined,
+  EyeInvisibleOutlined,
+  MailOutlined,
+  SafetyOutlined,
+  ApiOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  SyncOutlined,
+} from '@ant-design/icons'
+import { apiFetch } from '@/lib/utils'
+
+const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
+  mail_provider: [
+    { label: 'Laoudo（固定邮箱）', value: 'laoudo' },
+    { label: 'TempMail.lol（自动生成）', value: 'tempmail_lol' },
+    { label: 'DuckMail（自动生成）', value: 'duckmail' },
+    { label: 'MoeMail', value: 'moemail' },
+    { label: 'Freemail（自建 CF Worker）', value: 'freemail' },
+    { label: 'CF Worker（自建域名）', value: 'cfworker' },
+    { label: 'LuckMail（订单接码 / 已购邮箱）', value: 'luckmail' },
+  ],
+  default_executor: [
+    { label: 'API 协议（无浏览器）', value: 'protocol' },
+    { label: '无头浏览器', value: 'headless' },
+    { label: '有头浏览器', value: 'headed' },
+  ],
+  default_captcha_solver: [
+    { label: 'YesCaptcha', value: 'yescaptcha' },
+    { label: '本地 Solver (Camoufox)', value: 'local_solver' },
+    { label: '手动', value: 'manual' },
+  ],
+  chatgpt_auto_restock_enabled: [
+    { label: '开启', value: '1' },
+    { label: '关闭', value: '0' },
+  ],
+  chatgpt_auto_restock_executor_type: [
+    { label: 'API 协议（无浏览器）', value: 'protocol' },
+    { label: '无头浏览器', value: 'headless' },
+    { label: '有头浏览器', value: 'headed' },
+  ],
+  chatgpt_auto_restock_captcha_solver: [
+    { label: 'YesCaptcha', value: 'yescaptcha' },
+    { label: '本地 Solver (Camoufox)', value: 'local_solver' },
+    { label: '手动', value: 'manual' },
+  ],
+}
+
+const TAB_ITEMS = [
+  {
+    key: 'register',
+    label: '注册设置',
+    icon: <ApiOutlined />,
+    sections: [
+      {
+        title: '默认注册方式',
+        desc: '控制注册任务如何执行',
+        fields: [
+          { key: 'default_executor', label: '执行器类型', type: 'select' },
+          { key: 'register_max_concurrency', label: '注册并发上限', placeholder: '例如 10' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'mailbox',
+    label: '邮箱服务',
+    icon: <MailOutlined />,
+    sections: [
+      {
+        title: '默认邮箱服务',
+        desc: '选择注册时使用的邮箱类型',
+        fields: [{ key: 'mail_provider', label: '邮箱服务', type: 'select' }],
+      },
+      {
+        title: 'Laoudo',
+        desc: '固定邮箱，手动配置',
+        fields: [
+          { key: 'laoudo_email', label: '邮箱地址', placeholder: 'xxx@laoudo.com' },
+          { key: 'laoudo_account_id', label: 'Account ID', placeholder: '563' },
+          { key: 'laoudo_auth', label: 'JWT Token', placeholder: 'eyJ...', secret: true },
+        ],
+      },
+      {
+        title: 'Freemail',
+        desc: '基于 Cloudflare Worker 的自建邮箱，支持管理员令牌或账号密码认证',
+        fields: [
+          { key: 'freemail_api_url', label: 'API URL', placeholder: 'https://mail.example.com' },
+          { key: 'freemail_admin_token', label: '管理员令牌', secret: true },
+          { key: 'freemail_username', label: '用户名（可选）' },
+          { key: 'freemail_password', label: '密码（可选）', secret: true },
+        ],
+      },
+      {
+        title: 'MoeMail',
+        desc: '通过 MoeMail API 访问自建实例，使用 X-API-Key 认证',
+        fields: [
+          { key: 'moemail_api_url', label: 'API URL', placeholder: 'https://mail.example.com' },
+          { key: 'moemail_api_key', label: 'API Key', placeholder: 'YOUR_API_KEY', secret: true },
+          { key: 'moemail_domain', label: '指定域名（可选）', placeholder: 'moemail.app' },
+        ],
+      },
+      {
+        title: 'TempMail.lol',
+        desc: '自动生成邮箱，无需配置，需要代理访问（CN IP 被封）',
+        fields: [],
+      },
+      {
+        title: 'DuckMail',
+        desc: '自动生成邮箱，随机创建账号',
+        fields: [
+          { key: 'duckmail_api_url', label: 'Web URL', placeholder: 'https://www.duckmail.sbs' },
+          { key: 'duckmail_provider_url', label: 'Provider URL', placeholder: 'https://api.duckmail.sbs' },
+          { key: 'duckmail_bearer', label: 'Bearer Token', placeholder: 'kevin273945', secret: true },
+        ],
+      },
+      {
+        title: 'CF Worker 自建邮箱',
+        desc: '基于 Cloudflare Worker 的自建临时邮箱服务',
+        fields: [
+          { key: 'cfworker_api_url', label: 'API URL', placeholder: 'https://apimail.example.com' },
+          { key: 'cfworker_admin_token', label: '管理员 Token', secret: true },
+          { key: 'cfworker_domain', label: '邮箱域名', placeholder: 'example.com' },
+          { key: 'cfworker_fingerprint', label: 'Fingerprint', placeholder: '6703363b...' },
+        ],
+      },
+      {
+        title: 'LuckMail',
+        desc: 'ChatGPT 走购买邮箱，其他平台继续走订单接码老逻辑',
+        fields: [
+          { key: 'luckmail_base_url', label: '平台地址', placeholder: 'https://mails.luckyous.com' },
+          { key: 'luckmail_api_key', label: 'API Key', secret: true },
+          { key: 'luckmail_email_type', label: '邮箱类型（可选）', placeholder: 'ms_graph / ms_imap / self_built' },
+          { key: 'luckmail_domain', label: '邮箱域名（可选）', placeholder: 'outlook.com / gmail.com' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'captcha',
+    label: '验证码',
+    icon: <SafetyOutlined />,
+    sections: [
+      {
+        title: '验证码服务',
+        desc: '用于绕过注册页面的人机验证',
+        fields: [
+          { key: 'default_captcha_solver', label: '默认服务', type: 'select' },
+          { key: 'yescaptcha_key', label: 'YesCaptcha Key', secret: true },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'chatgpt',
+    label: 'ChatGPT',
+    icon: <ApiOutlined />,
+    sections: [
+      {
+        title: 'CPA 面板',
+        desc: '注册完成后自动上传到 CPA 管理平台',
+        fields: [
+          { key: 'cpa_api_url', label: 'API URL', placeholder: 'https://your-cpa.example.com' },
+          { key: 'cpa_api_key', label: 'API Key', secret: true },
+        ],
+      },
+      {
+        title: 'Team Manager',
+        desc: '上传到自建 Team Manager 系统',
+        fields: [
+          { key: 'team_manager_url', label: 'API URL', placeholder: 'https://your-tm.example.com' },
+          { key: 'team_manager_key', label: 'API Key', secret: true },
+        ],
+      },
+      {
+        title: 'ChatGPT 自动补货',
+        desc: '库存低于阈值时自动发起注册任务，并继续自动写入 CLIProxyAPI',
+        fields: [
+          { key: 'chatgpt_auto_restock_enabled', label: '启用自动补货', type: 'select' },
+          { key: 'chatgpt_auto_restock_threshold', label: '触发阈值', placeholder: '例如 3' },
+          { key: 'chatgpt_auto_restock_target', label: '目标库存', placeholder: '例如 10' },
+          { key: 'chatgpt_auto_restock_batch_size', label: '每轮补货数', placeholder: '例如 2' },
+          { key: 'chatgpt_auto_restock_concurrency', label: '补货并发数', placeholder: '例如 5' },
+          { key: 'chatgpt_auto_restock_proxy', label: '专用代理（可选）', placeholder: 'http://user:pass@host:port' },
+          { key: 'chatgpt_auto_restock_executor_type', label: '执行器', type: 'select' },
+          { key: 'chatgpt_auto_restock_captcha_solver', label: '验证码方案', type: 'select' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'cliproxyapi',
+    label: 'CLIProxyAPI',
+    icon: <ApiOutlined />,
+    sections: [
+      {
+        title: '管理面板',
+        desc: '注册成功后自动写入 CLIProxyAPI，也可手动回填现有 ChatGPT 账号',
+        fields: [
+          { key: 'cliproxyapi_url', label: 'API URL', placeholder: 'http://127.0.0.1:8317' },
+          { key: 'cliproxyapi_management_key', label: '管理口令', secret: true, placeholder: '默认 cliproxyapi' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'grok',
+    label: 'Grok',
+    icon: <ApiOutlined />,
+    sections: [
+      {
+        title: 'grok2api',
+        desc: '注册成功后自动导入到 grok2api 管理后台',
+        fields: [
+          { key: 'grok2api_url', label: 'API URL', placeholder: 'http://127.0.0.1:7860' },
+          { key: 'grok2api_app_key', label: 'App Key', secret: true },
+          { key: 'grok2api_pool', label: 'Token Pool', placeholder: 'ssoBasic 或 ssoSuper' },
+          { key: 'grok2api_quota', label: 'Quota（可选）', placeholder: '留空按池默认值' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'kiro',
+    label: 'Kiro',
+    icon: <ApiOutlined />,
+    sections: [
+      {
+        title: 'Kiro Account Manager',
+        desc: '注册成功后自动写入 kiro-account-manager 的 accounts.json',
+        fields: [
+          {
+            key: 'kiro_manager_path',
+            label: 'accounts.json 路径（可选）',
+            placeholder: '留空则自动使用系统默认路径',
+          },
+          {
+            key: 'kiro_manager_exe',
+            label: 'Kiro Manager 可执行文件（可选）',
+            placeholder: '未安装 Rust 时可填写已安装的 KiroAccountManager.exe',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'gemini',
+    label: 'Gemini',
+    icon: <ApiOutlined />,
+    sections: [
+      {
+        title: 'Gemini Business2API',
+        desc: '内嵌 Gemini 网关的安全配置，修改后重启服务生效',
+        fields: [
+          { key: 'gemini_admin_key', label: 'Admin Key', secret: true, placeholder: '访问 /gemini/ 管理面板' },
+          { key: 'gemini_session_secret', label: 'Session Secret', secret: true, placeholder: '用于 Gemini 子应用会话签名' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'integrations',
+    label: '插件',
+    icon: <ApiOutlined />,
+    sections: [],
+  },
+]
+
+interface FieldConfig {
+  key: string
+  label: string
+  placeholder?: string
+  type?: 'select' | 'input'
+  secret?: boolean
+}
+
+interface SectionConfig {
+  title: string
+  desc?: string
+  fields: FieldConfig[]
+}
+
+interface TabConfig {
+  key: string
+  label: string
+  icon: React.ReactNode
+  sections: SectionConfig[]
+}
+
+function formatResultText(data: unknown) {
+  if (typeof data === 'string') return data
+  try {
+    return JSON.stringify(data, null, 2)
+  } catch {
+    return String(data)
+  }
+}
+
+function ConfigField({ field }: { field: FieldConfig }) {
+  const [showSecret, setShowSecret] = useState(false)
+  const options = SELECT_FIELDS[field.key]
+  const helpText =
+    field.key === 'default_executor'
+      ? '仅对支持的平台生效；ChatGPT、Cursor、Grok、Kiro、Tavily、Trae 支持浏览器模式，OpenBlockLabs 仅支持纯协议。'
+      : undefined
+
+  return (
+    <Form.Item label={field.label} name={field.key} extra={helpText}>
+      {options ? (
+        <Select options={options} style={{ width: '100%' }} />
+      ) : field.secret ? (
+        <Input.Password
+          placeholder={field.placeholder}
+          visibilityToggle={{
+            visible: !showSecret,
+            onVisibleChange: setShowSecret,
+          }}
+          iconRender={(visible) => (visible ? <EyeOutlined /> : <EyeInvisibleOutlined />)}
+        />
+      ) : (
+        <Input placeholder={field.placeholder} />
+      )}
+    </Form.Item>
+  )
+}
+
+function ConfigSection({ section }: { section: SectionConfig }) {
+  return (
+    <Card title={section.title} extra={section.desc && <span style={{ fontSize: 12, color: '#7a8ba3' }}>{section.desc}</span>} style={{ marginBottom: 16 }}>
+      {section.fields.map((field) => (
+        <ConfigField key={field.key} field={field} />
+      ))}
+    </Card>
+  )
+}
+
+function SolverStatus() {
+  const [running, setRunning] = useState<boolean | null>(null)
+
+  const checkSolver = async () => {
+    try {
+      const d = await apiFetch('/solver/status')
+      setRunning(d.running)
+    } catch {
+      setRunning(false)
+    }
+  }
+
+  const restartSolver = async () => {
+    await apiFetch('/solver/restart', { method: 'POST' })
+    setRunning(null)
+    setTimeout(checkSolver, 2000)
+  }
+
+  useEffect(() => {
+    checkSolver()
+    const timer = window.setInterval(checkSolver, 5000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  return (
+    <Card title="Turnstile Solver" size="small" style={{ marginBottom: 16 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}
+      >
+        <Space size={8}>
+          {running === null ? (
+            <SyncOutlined spin style={{ color: '#7a8ba3' }} />
+          ) : running ? (
+            <CheckCircleOutlined style={{ color: '#10b981' }} />
+          ) : (
+            <CloseCircleOutlined style={{ color: '#ef4444' }} />
+          )}
+          <span style={{ color: running ? '#10b981' : '#7a8ba3', fontWeight: 500 }}>
+            {running === null ? '检测中' : running ? '运行中' : '未运行'}
+          </span>
+        </Space>
+        <Button size="small" onClick={restartSolver}>
+          重启 Solver
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
+function IntegrationsPanel() {
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState('')
+  const [resultModal, setResultModal] = useState({
+    open: false,
+    title: '',
+    ok: true,
+    content: '',
+  })
+
+  const showResultModal = (title: string, data: unknown, ok = true) => {
+    setResultModal({
+      open: true,
+      title,
+      ok,
+      content: formatResultText(data),
+    })
+  }
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const d = await apiFetch('/integrations/services')
+      setItems(d.items || [])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    const timer = window.setInterval(load, 5000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const doAction = async (key: string, request: Promise<any>) => {
+    setBusy(key)
+    try {
+      const result = await request
+      await load()
+      message.success('操作完成')
+      showResultModal('操作结果', result, true)
+    } catch (e: any) {
+      message.error(e?.message || '操作失败')
+      showResultModal('操作结果', e?.message || e || '操作失败', false)
+      await load()
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const backfill = async (platforms: string[], label: string, busyKey: string) => {
+    setBusy(busyKey)
+    try {
+      const d = await apiFetch('/integrations/backfill', {
+        method: 'POST',
+        body: JSON.stringify({ platforms }),
+      })
+      message.success(`${label} 回填完成：成功 ${d.success} / ${d.total}`)
+      showResultModal(`${label} 回填结果`, d, true)
+    } catch (e: any) {
+      message.error(e?.message || `${label} 回填失败`)
+      showResultModal(`${label} 回填结果`, e?.message || e || `${label} 回填失败`, false)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Modal
+        open={resultModal.open}
+        title={resultModal.title}
+        onCancel={() => setResultModal((v) => ({ ...v, open: false }))}
+        onOk={() => setResultModal((v) => ({ ...v, open: false }))}
+        width={760}
+      >
+        <Typography.Paragraph style={{ marginBottom: 8, color: resultModal.ok ? '#10b981' : '#ef4444' }}>
+          {resultModal.ok ? '操作已完成。' : '操作失败。'}
+        </Typography.Paragraph>
+        <pre
+          style={{
+            margin: 0,
+            maxHeight: 420,
+            overflow: 'auto',
+            padding: 12,
+            borderRadius: 8,
+            background: 'rgba(127,127,127,0.08)',
+            fontSize: 12,
+            lineHeight: 1.5,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {resultModal.content}
+        </pre>
+      </Modal>
+
+      <Card title="批量操作">
+        <Space wrap>
+          <Button loading={busy === 'start-all'} onClick={() => doAction('start-all', apiFetch('/integrations/services/start-all', { method: 'POST' }))}>
+            启动全部（已安装）
+          </Button>
+          <Button loading={busy === 'stop-all'} onClick={() => doAction('stop-all', apiFetch('/integrations/services/stop-all', { method: 'POST' }))}>
+            停止全部
+          </Button>
+          <Button loading={loading} onClick={load}>
+            刷新状态
+          </Button>
+        </Space>
+      </Card>
+
+      {items.map((item) => (
+        <Card key={item.name} title={item.label}>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <div>
+              状态：
+              <Tag color={item.running ? 'green' : 'default'} style={{ marginLeft: 8 }}>
+                {item.running ? '运行中' : '未运行'}
+              </Tag>
+              <Tag color={item.repo_exists ? 'blue' : 'orange'} style={{ marginLeft: 8 }}>
+                {item.repo_exists ? '已安装' : '未安装'}
+              </Tag>
+              {item.pid ? <span style={{ marginLeft: 8 }}>PID: {item.pid}</span> : null}
+            </div>
+            <div>插件目录：<Typography.Text copyable>{item.repo_path}</Typography.Text></div>
+            {item.url ? <div>地址：<Typography.Text copyable>{item.url}</Typography.Text></div> : null}
+            {item.management_url ? <div>管理页：<Typography.Text copyable>{item.management_url}</Typography.Text></div> : null}
+            {item.management_key ? <div>登录口令：<Typography.Text copyable>{item.management_key}</Typography.Text></div> : null}
+            <div>日志：<Typography.Text copyable>{item.log_path}</Typography.Text></div>
+            {item.last_error ? <div style={{ color: '#ef4444' }}>最近错误：{item.last_error}</div> : null}
+            <Space wrap>
+              {item.management_url ? (
+                <Button onClick={() => window.open(item.management_url, '_blank')}>
+                  打开管理页
+                </Button>
+              ) : null}
+              {!item.repo_exists ? (
+                <Button
+                  type="primary"
+                  loading={busy === `install-${item.name}`}
+                  onClick={() => doAction(`install-${item.name}`, apiFetch(`/integrations/services/${item.name}/install`, { method: 'POST' }))}
+                >
+                  安装
+                </Button>
+              ) : null}
+              <Button
+                loading={busy === `start-${item.name}`}
+                disabled={!item.repo_exists}
+                onClick={() => doAction(`start-${item.name}`, apiFetch(`/integrations/services/${item.name}/start`, { method: 'POST' }))}
+              >
+                启动
+              </Button>
+              <Button
+                loading={busy === `stop-${item.name}`}
+                onClick={() => doAction(`stop-${item.name}`, apiFetch(`/integrations/services/${item.name}/stop`, { method: 'POST' }))}
+              >
+                停止
+              </Button>
+              {item.name === 'grok2api' ? (
+                <Button
+                  loading={busy === 'backfill-grok'}
+                  onClick={() => backfill(['grok'], 'Grok', 'backfill-grok')}
+                >
+                  回填现有 Grok 账号
+                </Button>
+              ) : null}
+              {item.name === 'kiro-manager' ? (
+                <Button
+                  loading={busy === 'backfill-kiro'}
+                  onClick={() => backfill(['kiro'], 'Kiro', 'backfill-kiro')}
+                >
+                  回填现有 Kiro 账号
+                </Button>
+              ) : null}
+              {item.name === 'cliproxyapi' ? (
+                <Button
+                  loading={busy === 'backfill-cliproxyapi'}
+                  onClick={() => backfill(['chatgpt'], 'ChatGPT', 'backfill-cliproxyapi')}
+                >
+                  回填现有 ChatGPT 账号
+                </Button>
+              ) : null}
+            </Space>
+          </Space>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+export default function Settings() {
+  const [form] = Form.useForm()
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [activeTab, setActiveTab] = useState('register')
+
+  useEffect(() => {
+    apiFetch('/config').then((data) => {
+      if (!data.luckmail_base_url) {
+        data.luckmail_base_url = 'https://mails.luckyous.com/'
+      }
+      if (!data.register_max_concurrency) data.register_max_concurrency = '10'
+      if (!data.chatgpt_auto_restock_enabled) data.chatgpt_auto_restock_enabled = '0'
+      if (!data.chatgpt_auto_restock_concurrency) data.chatgpt_auto_restock_concurrency = data.register_max_concurrency || '10'
+      if (!data.chatgpt_auto_restock_executor_type) data.chatgpt_auto_restock_executor_type = 'protocol'
+      if (!data.chatgpt_auto_restock_captcha_solver) data.chatgpt_auto_restock_captcha_solver = 'yescaptcha'
+      form.setFieldsValue(data)
+    })
+  }, [form])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const values = form.getFieldsValue()
+      await apiFetch('/config', { method: 'PUT', body: JSON.stringify({ data: values }) })
+      message.success('保存成功')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const currentTab = TAB_ITEMS.find((t) => t.key === activeTab) as TabConfig
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <h1 style={{ fontSize: 24, fontWeight: 'bold', margin: 0 }}>全局配置</h1>
+        <p style={{ color: '#7a8ba3', marginTop: 4 }}>配置将持久化保存，注册任务自动使用</p>
+      </div>
+
+      <div style={{ display: 'flex', gap: 24 }}>
+        <div style={{ width: 200 }}>
+          <Tabs
+            tabPosition="left"
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            items={TAB_ITEMS.map((t) => ({
+              key: t.key,
+              label: (
+                <span>
+                  {t.icon}
+                  <span style={{ marginLeft: 8 }}>{t.label}</span>
+                </span>
+              ),
+            }))}
+          />
+        </div>
+
+        <div style={{ flex: 1 }}>
+          {activeTab === 'integrations' ? (
+            <IntegrationsPanel />
+          ) : (
+            <Form form={form} layout="vertical">
+              {activeTab === 'captcha' ? <SolverStatus /> : null}
+              {currentTab.sections.map((section) => (
+                <ConfigSection key={section.title} section={section} />
+              ))}
+              <Button type="primary" icon={<SaveOutlined />} onClick={save} loading={saving} block>
+                {saved ? '已保存 ✓' : '保存配置'}
+              </Button>
+            </Form>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

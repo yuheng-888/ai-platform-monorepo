@@ -1,0 +1,1 @@
+import{P as u,i as a}from"./index-BeRLeqXy.js";import{s as n}from"./settings-DXJnXWUw.js";const f=u("settings",()=>{const t=a(null),e=a(!1);async function i(){e.value=!0;try{t.value=await n.get()}finally{e.value=!1}}async function o(s){await n.update(s),t.value=s}return{settings:t,isLoading:e,loadSettings:i,updateSettings:o}});export{f as u};

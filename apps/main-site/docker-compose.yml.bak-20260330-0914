@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  any-auto-register:
+    build: .
+    container_name: any-auto-register
+    ports:
+      - "18000:8000"
+      - "8889:8889"
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
