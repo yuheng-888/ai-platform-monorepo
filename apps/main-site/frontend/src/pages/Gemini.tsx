@@ -140,6 +140,37 @@ type RegisterFormValues = {
   mail_provider?: string
 }
 
+type GeminiSharedSettingsValues = {
+  register_max_concurrency?: number
+  mail_provider?: string
+  moemail_api_url?: string
+  moemail_api_key?: string
+  moemail_domain?: string
+  freemail_api_url?: string
+  freemail_admin_token?: string
+  freemail_domain?: string
+  duckmail_provider_url?: string
+  duckmail_bearer?: string
+}
+
+type GeminiNativeSettingsValues = {
+  api_key?: string
+  base_url?: string
+  proxy_for_auth?: string
+  proxy_for_chat?: string
+  browser_mode?: string
+  register_domain?: string
+  register_default_count?: number
+  register_default_concurrency?: number
+  refresh_window_hours?: number
+  auto_refresh_accounts_seconds?: number
+  refresh_cooldown_hours?: number
+  logo_url?: string
+  chat_url?: string
+}
+
+const GEMINI_SHARED_MAIL_PROVIDERS = new Set(['duckmail', 'moemail', 'freemail'])
+
 async function geminiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers || {})
   if (!headers.has('Content-Type') && init?.body && !(init.body instanceof FormData)) {
@@ -199,7 +230,6 @@ export default function GeminiPage() {
   const [registerTask, setRegisterTask] = useState<GeminiTask | null>(null)
   const [loginTask, setLoginTask] = useState<GeminiTask | null>(null)
   const [activeTab, setActiveTab] = useState('accounts')
-  const [settingsText, setSettingsText] = useState('')
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [logData, setLogData] = useState<GeminiLogPayload | null>(null)
   const [logsLoaded, setLogsLoaded] = useState(false)
@@ -210,6 +240,9 @@ export default function GeminiPage() {
   const [error, setError] = useState('')
   const [registerOpen, setRegisterOpen] = useState(false)
   const [registerForm] = Form.useForm<RegisterFormValues>()
+  const [sharedSettingsForm] = Form.useForm<GeminiSharedSettingsValues>()
+  const [nativeSettingsForm] = Form.useForm<GeminiNativeSettingsValues>()
+  const sharedMailProvider = Form.useWatch('mail_provider', sharedSettingsForm)
 
   const hasActiveTask = useMemo(() => {
     return ['pending', 'running'].includes(registerTask?.status || '')
@@ -270,8 +303,42 @@ export default function GeminiPage() {
   const loadSettings = async () => {
     setActionLoading('load-settings')
     try {
-      const data = await geminiFetch<GeminiSettingsPayload>('/gemini/admin/settings')
-      setSettingsText(JSON.stringify(data, null, 2))
+      const [globalConfig, geminiSettings] = await Promise.all([
+        apiFetch('/config') as Promise<Record<string, any>>,
+        geminiFetch<GeminiSettingsPayload>('/gemini/admin/settings'),
+      ])
+      const basic = geminiSettings.basic || {}
+      const retry = geminiSettings.retry || {}
+      const publicDisplay = geminiSettings.public_display || {}
+
+      sharedSettingsForm.setFieldsValue({
+        register_max_concurrency: Number.parseInt(String(globalConfig.register_max_concurrency || basic.register_max_concurrency || 5), 10) || 5,
+        mail_provider: globalConfig.mail_provider || basic.temp_mail_provider || 'duckmail',
+        moemail_api_url: globalConfig.moemail_api_url || basic.moemail_base_url || '',
+        moemail_api_key: globalConfig.moemail_api_key || basic.moemail_api_key || '',
+        moemail_domain: globalConfig.moemail_domain || basic.moemail_domain || '',
+        freemail_api_url: globalConfig.freemail_api_url || basic.freemail_base_url || '',
+        freemail_admin_token: globalConfig.freemail_admin_token || basic.freemail_jwt_token || '',
+        freemail_domain: globalConfig.freemail_domain || basic.freemail_domain || '',
+        duckmail_provider_url: globalConfig.duckmail_provider_url || basic.duckmail_base_url || '',
+        duckmail_bearer: globalConfig.duckmail_bearer || basic.duckmail_api_key || '',
+      })
+
+      nativeSettingsForm.setFieldsValue({
+        api_key: basic.api_key || '',
+        base_url: basic.base_url || '',
+        proxy_for_auth: basic.proxy_for_auth || '',
+        proxy_for_chat: basic.proxy_for_chat || '',
+        browser_mode: basic.browser_mode || 'normal',
+        register_domain: basic.register_domain || '',
+        register_default_count: basic.register_default_count || 1,
+        register_default_concurrency: basic.register_default_concurrency || basic.register_max_concurrency || 5,
+        refresh_window_hours: basic.refresh_window_hours || 24,
+        auto_refresh_accounts_seconds: retry.auto_refresh_accounts_seconds || 300,
+        refresh_cooldown_hours: retry.refresh_cooldown_hours || 24,
+        logo_url: publicDisplay.logo_url || '',
+        chat_url: publicDisplay.chat_url || '',
+      })
       setSettingsLoaded(true)
     } catch (e: any) {
       message.error(e?.message || '加载 Gemini 设置失败')
@@ -283,12 +350,79 @@ export default function GeminiPage() {
   const saveSettings = async () => {
     setActionLoading('save-settings')
     try {
-      const payload = JSON.parse(settingsText || '{}')
+      const sharedValues = await sharedSettingsForm.validateFields()
+      const nativeValues = await nativeSettingsForm.validateFields()
+
+      await apiFetch('/config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          data: {
+            register_max_concurrency: String(sharedValues.register_max_concurrency || 5),
+            mail_provider: String(sharedValues.mail_provider || ''),
+            moemail_api_url: String(sharedValues.moemail_api_url || ''),
+            moemail_api_key: String(sharedValues.moemail_api_key || ''),
+            moemail_domain: String(sharedValues.moemail_domain || ''),
+            freemail_api_url: String(sharedValues.freemail_api_url || ''),
+            freemail_admin_token: String(sharedValues.freemail_admin_token || ''),
+            freemail_domain: String(sharedValues.freemail_domain || ''),
+            duckmail_provider_url: String(sharedValues.duckmail_provider_url || ''),
+            duckmail_bearer: String(sharedValues.duckmail_bearer || ''),
+          },
+        }),
+      })
+
+      const selectedMailProvider = String(sharedValues.mail_provider || '')
+      const supportsSharedMailProvider = GEMINI_SHARED_MAIL_PROVIDERS.has(selectedMailProvider)
+      const basicPayload: Record<string, any> = {
+        api_key: nativeValues.api_key || '',
+        base_url: nativeValues.base_url || '',
+        proxy_for_auth: nativeValues.proxy_for_auth || '',
+        proxy_for_chat: nativeValues.proxy_for_chat || '',
+        browser_mode: nativeValues.browser_mode || 'normal',
+        register_domain: nativeValues.register_domain || '',
+        register_default_count: nativeValues.register_default_count || 1,
+        register_default_concurrency: nativeValues.register_default_concurrency || sharedValues.register_max_concurrency || 5,
+        register_max_concurrency: sharedValues.register_max_concurrency || 5,
+        refresh_window_hours: nativeValues.refresh_window_hours || 24,
+      }
+
+      if (supportsSharedMailProvider) {
+        basicPayload.temp_mail_provider = selectedMailProvider
+      }
+      if (selectedMailProvider === 'moemail') {
+        basicPayload.moemail_base_url = sharedValues.moemail_api_url || ''
+        basicPayload.moemail_api_key = sharedValues.moemail_api_key || ''
+        basicPayload.moemail_domain = sharedValues.moemail_domain || ''
+      }
+      if (selectedMailProvider === 'freemail') {
+        basicPayload.freemail_base_url = sharedValues.freemail_api_url || ''
+        basicPayload.freemail_jwt_token = sharedValues.freemail_admin_token || ''
+        basicPayload.freemail_domain = sharedValues.freemail_domain || ''
+      }
+      if (selectedMailProvider === 'duckmail') {
+        basicPayload.duckmail_base_url = sharedValues.duckmail_provider_url || ''
+        basicPayload.duckmail_api_key = sharedValues.duckmail_bearer || ''
+      }
+
       await geminiFetch('/gemini/admin/settings', {
         method: 'PUT',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          basic: basicPayload,
+          retry: {
+            auto_refresh_accounts_seconds: nativeValues.auto_refresh_accounts_seconds || 300,
+            refresh_cooldown_hours: nativeValues.refresh_cooldown_hours || 24,
+          },
+          public_display: {
+            logo_url: nativeValues.logo_url || '',
+            chat_url: nativeValues.chat_url || '',
+          },
+        }),
       })
-      message.success('Gemini 设置已保存')
+      if (!supportsSharedMailProvider && selectedMailProvider) {
+        message.warning(`全局邮箱渠道 ${selectedMailProvider} 目前不会自动映射到 Gemini，Gemini 将继续沿用自身邮箱渠道。`)
+      } else {
+        message.success('Gemini 设置已保存')
+      }
       setSettingsLoaded(true)
     } catch (e: any) {
       message.error(e?.message || '保存 Gemini 设置失败')
@@ -354,13 +488,29 @@ export default function GeminiPage() {
   }
 
   const openRegisterModal = () => {
-    registerForm.setFieldsValue({
-      count: 1,
-      concurrency: 5,
-      domain: '',
-      mail_provider: 'duckmail',
-    })
-    setRegisterOpen(true)
+    void (async () => {
+      try {
+        const cfg = await apiFetch('/config')
+        const concurrency = Number.parseInt(String(cfg.register_max_concurrency || ''), 10)
+        const mailProvider = GEMINI_SHARED_MAIL_PROVIDERS.has(String(cfg.mail_provider || ''))
+          ? String(cfg.mail_provider || '')
+          : 'duckmail'
+        registerForm.setFieldsValue({
+          count: 1,
+          concurrency: Number.isFinite(concurrency) && concurrency > 0 ? concurrency : 5,
+          domain: '',
+          mail_provider: mailProvider,
+        })
+      } catch {
+        registerForm.setFieldsValue({
+          count: 1,
+          concurrency: 5,
+          domain: '',
+          mail_provider: 'duckmail',
+        })
+      }
+      setRegisterOpen(true)
+    })()
   }
 
   const handleStartRegister = async () => {
@@ -791,8 +941,8 @@ export default function GeminiPage() {
                   <Alert
                     type="info"
                     showIcon
-                    message="这里直接编辑 Gemini 设置 JSON"
-                    description="这是主站里的原生设置入口。保存时会直接调用 Gemini 设置接口，不需要再跳回独立控制台。"
+                    message="Gemini 优先复用主站全局配置"
+                    description="邮箱渠道、共享邮箱参数和注册并发上限优先使用主站全局配置。这里仅保留 Gemini 专属字段，不再暴露整份 JSON。"
                   />
                   <Space wrap>
                     <Button onClick={() => void loadSettings()} loading={actionLoading === 'load-settings'}>
@@ -802,13 +952,162 @@ export default function GeminiPage() {
                       保存设置
                     </Button>
                   </Space>
-                  <Input.TextArea
-                    value={settingsText}
-                    onChange={(event) => setSettingsText(event.target.value)}
-                    autoSize={{ minRows: 18, maxRows: 28 }}
-                    placeholder="Gemini 设置 JSON"
-                    style={{ fontFamily: 'monospace' }}
-                  />
+                  <Card size="small" title="共享主站配置">
+                    <Form form={sharedSettingsForm} layout="vertical">
+                      <Row gutter={16}>
+                        <Col xs={24} md={12}>
+                          <Form.Item name="register_max_concurrency" label="主站并发上限" rules={[{ required: true, message: '请输入并发上限' }]}>
+                            <InputNumber min={1} max={50} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={12}>
+                          <Form.Item name="mail_provider" label="共享邮箱渠道">
+                            <Select
+                              allowClear
+                              options={[
+                                { label: 'DuckMail', value: 'duckmail' },
+                                { label: 'MoeMail', value: 'moemail' },
+                                { label: 'Freemail', value: 'freemail' },
+                              ]}
+                            />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+
+                      {sharedMailProvider === 'moemail' ? (
+                        <Row gutter={16}>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="moemail_api_url" label="MoeMail API URL">
+                              <Input placeholder="https://mail.example.com" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="moemail_api_key" label="MoeMail API Key">
+                              <Input.Password placeholder="API Key" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="moemail_domain" label="MoeMail 域名">
+                              <Input placeholder="moemail.app" />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                      ) : null}
+
+                      {sharedMailProvider === 'freemail' ? (
+                        <Row gutter={16}>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="freemail_api_url" label="Freemail API URL">
+                              <Input placeholder="https://mail.example.com" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="freemail_admin_token" label="Freemail Token">
+                              <Input.Password placeholder="管理员 Token" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Form.Item name="freemail_domain" label="Freemail 域名">
+                              <Input placeholder="freemail.local" />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                      ) : null}
+
+                      {sharedMailProvider === 'duckmail' ? (
+                        <Row gutter={16}>
+                          <Col xs={24} md={12}>
+                            <Form.Item name="duckmail_provider_url" label="DuckMail Provider URL">
+                              <Input placeholder="https://api.duckmail.sbs" />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={24} md={12}>
+                            <Form.Item name="duckmail_bearer" label="DuckMail Bearer">
+                              <Input.Password placeholder="Bearer Token" />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                      ) : null}
+                    </Form>
+                  </Card>
+
+                  <Card size="small" title="Gemini 专属配置">
+                    <Form form={nativeSettingsForm} layout="vertical">
+                      <Row gutter={16}>
+                        <Col xs={24} md={12}>
+                          <Form.Item name="api_key" label="Gemini API Key">
+                            <Input.Password placeholder="sk-..." />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={12}>
+                          <Form.Item name="base_url" label="Gemini Base URL">
+                            <Input placeholder="默认留空即可" />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={12}>
+                          <Form.Item name="proxy_for_auth" label="认证代理">
+                            <Input placeholder="http://user:pass@host:port" />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={12}>
+                          <Form.Item name="proxy_for_chat" label="对话代理">
+                            <Input placeholder="http://user:pass@host:port" />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={8}>
+                          <Form.Item name="browser_mode" label="浏览器模式">
+                            <Select
+                              options={[
+                                { label: 'normal', value: 'normal' },
+                                { label: 'silent', value: 'silent' },
+                                { label: 'headless', value: 'headless' },
+                              ]}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={8}>
+                          <Form.Item name="register_default_count" label="默认注册数量">
+                            <InputNumber min={1} max={200} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={8}>
+                          <Form.Item name="register_default_concurrency" label="默认注册并发">
+                            <InputNumber min={1} max={50} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={8}>
+                          <Form.Item name="register_domain" label="注册域名">
+                            <Input placeholder="可选" />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={8}>
+                          <Form.Item name="refresh_window_hours" label="刷新窗口小时数">
+                            <InputNumber min={1} max={168} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={8}>
+                          <Form.Item name="auto_refresh_accounts_seconds" label="自动刷新间隔（秒）">
+                            <InputNumber min={30} max={86400} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={12}>
+                          <Form.Item name="refresh_cooldown_hours" label="刷新冷却（小时）">
+                            <InputNumber min={1} max={168} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={12}>
+                          <Form.Item name="logo_url" label="公开页 Logo URL">
+                            <Input placeholder="https://..." />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={24}>
+                          <Form.Item name="chat_url" label="公开页 Chat URL">
+                            <Input placeholder="https://..." />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    </Form>
+                  </Card>
                 </div>
               ),
             },
