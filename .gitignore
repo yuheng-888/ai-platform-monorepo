@@ -4,6 +4,7 @@ dist/
 build/
 .venv/
 .venv312/
+.venv-test/
 __pycache__/
 *.pyc
 .env

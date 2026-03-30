@@ -14,9 +14,41 @@ def generate_session_secret() -> str:
     return secrets.token_hex(32)
 
 
+def _get_main_site_username(request: Request) -> str:
+    try:
+        username = str(getattr(request.state, "auth_username", "") or "").strip()
+    except Exception:
+        username = ""
+    if username:
+        return username
+
+    try:
+        from core.auth import SESSION_COOKIE_NAME, read_session_username
+    except Exception:
+        return ""
+
+    try:
+        token = request.cookies.get(SESSION_COOKIE_NAME, "")
+    except Exception:
+        return ""
+    return str(read_session_username(token) or "").strip()
+
+
+def _bridge_main_site_login(request: Request) -> bool:
+    username = _get_main_site_username(request)
+    if not username:
+        return False
+    request.session["authenticated"] = True
+    request.session["username"] = username
+    request.session["auth_source"] = "aar"
+    return True
+
+
 def is_logged_in(request: Request) -> bool:
     """检查用户是否已登录"""
-    return request.session.get("authenticated", False)
+    if request.session.get("authenticated", False):
+        return True
+    return _bridge_main_site_login(request)
 
 
 def login_user(request: Request):
