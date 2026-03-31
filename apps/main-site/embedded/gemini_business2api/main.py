@@ -17,6 +17,7 @@ from collections import deque
 from threading import Lock
 from embedded.gemini_business2api.core.database import stats_db
 from embedded.gemini_business2api.paths import LOGO_FILE, STATIC_DIR, ensure_data_dirs
+from embedded.gemini_business2api.integration import mount_optional_static_assets
 
 # ---------- 数据目录配置 ----------
 DATA_DIR = str(ensure_data_dirs())
@@ -43,6 +44,10 @@ from embedded.gemini_business2api.core.message import (
     get_conversation_key,
     parse_last_message,
     build_full_context_text
+)
+from embedded.gemini_business2api.core.request_binding import (
+    normalize_forced_account_id,
+    scope_conversation_key,
 )
 from embedded.gemini_business2api.core.google_api import (
     get_common_headers,
@@ -195,6 +200,12 @@ def save_task_to_history(task_type: str, task_data: dict) -> None:
         task_history.append(history_entry)
         _persist_task_history()
         logger.info(f"[HISTORY] Saved {task_type} task to history: {history_entry['id']}")
+    try:
+        from embedded.gemini_business2api.task_bridge import persist_gemini_task_log
+
+        persist_gemini_task_log(task_type=task_type, task_data=task_data)
+    except Exception as exc:
+        logger.warning(f"[HISTORY] Persist main-site task bridge failed: {exc}")
 
 
 def _build_history_entry(task_type: str, task_data: dict, is_live: bool = False) -> dict:
@@ -650,11 +661,7 @@ elif frontend_origin:
         allow_headers=["*"],
     )
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-if os.path.exists(STATIC_DIR / "assets"):
-    app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="assets")
-if os.path.exists(STATIC_DIR / "vendor"):
-    app.mount("/vendor", StaticFiles(directory=str(STATIC_DIR / "vendor")), name="vendor")
+mount_optional_static_assets(app, static_dir=STATIC_DIR)
 
 @app.get("/")
 async def serve_frontend_index():
@@ -2247,6 +2254,8 @@ async def chat_impl(
         client_ip = client_ip.split(",")[0].strip()
     else:
         client_ip = request.client.host if request.client else "unknown"
+    forced_account_id = normalize_forced_account_id(request.headers.get("X-Gemini-Account-ID"))
+    request.state.forced_account_id = forced_account_id
 
     # 记录请求统计
     async with stats_lock:
@@ -2274,7 +2283,10 @@ async def chat_impl(
     required_quota_types = get_required_quota_types(req.model)
 
     # 3. 生成会话指纹，获取Session锁（防止同一对话的并发请求冲突）
-    conv_key = get_conversation_key([m.model_dump() for m in req.messages], client_ip)
+    conv_key = scope_conversation_key(
+        get_conversation_key([m.model_dump() for m in req.messages], client_ip),
+        forced_account_id,
+    )
     session_lock = await multi_account_mgr.acquire_session_lock(conv_key)
 
     # 4. 在锁的保护下检查缓存和处理Session（保证同一对话的请求串行化）
@@ -2299,13 +2311,20 @@ async def chat_impl(
 
         if not cached_session:
             # 新对话：尝试创建会话（遇到错误就切换账户）
-            available_accounts = multi_account_mgr.get_available_accounts(required_quota_types)
-            max_retries = min(MAX_ACCOUNT_SWITCH_TRIES, len(available_accounts))
+            if forced_account_id:
+                max_retries = 1
+            else:
+                available_accounts = multi_account_mgr.get_available_accounts(required_quota_types)
+                max_retries = min(MAX_ACCOUNT_SWITCH_TRIES, len(available_accounts))
             last_error = None
 
             for retry_idx in range(max_retries):
                 try:
-                    account_manager = await multi_account_mgr.get_account(None, request_id, required_quota_types)
+                    account_manager = await multi_account_mgr.get_account(
+                        forced_account_id if forced_account_id else None,
+                        request_id,
+                        required_quota_types,
+                    )
                     google_session = await create_google_session(account_manager, http_client, USER_AGENT, request_id)
                     # 线程安全地绑定账户到此对话
                     await multi_account_mgr.set_session_cache(

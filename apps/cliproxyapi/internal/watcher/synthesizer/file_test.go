@@ -156,6 +156,50 @@ func TestFileSynthesizer_Synthesize_GeminiProviderMapping(t *testing.T) {
 	}
 }
 
+func TestFileSynthesizer_Synthesize_ProjectsOpenAICompatCredentialsIntoAttributes(t *testing.T) {
+	tempDir := t.TempDir()
+
+	authData := map[string]any{
+		"type":                        "gemini-business",
+		"email":                       "gemini-business@example.com",
+		"base_url":                    "http://127.0.0.1:39001/gemini/v1",
+		"api_key":                     "gemini-admin-key",
+		"header:X-Gemini-Account-ID":  "gemini-account-1",
+	}
+	data, _ := json.Marshal(authData)
+	err := os.WriteFile(filepath.Join(tempDir, "gemini-business.json"), data, 0o644)
+	if err != nil {
+		t.Fatalf("failed to write auth file: %v", err)
+	}
+
+	synth := NewFileSynthesizer()
+	ctx := &SynthesisContext{
+		Config:      &config.Config{},
+		AuthDir:     tempDir,
+		Now:         time.Now(),
+		IDGenerator: NewStableIDGenerator(),
+	}
+
+	auths, err := synth.Synthesize(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(auths) != 1 {
+		t.Fatalf("expected 1 auth, got %d", len(auths))
+	}
+
+	auth := auths[0]
+	if got := strings.TrimSpace(auth.Attributes["base_url"]); got != "http://127.0.0.1:39001/gemini/v1" {
+		t.Fatalf("base_url attribute = %q", got)
+	}
+	if got := strings.TrimSpace(auth.Attributes["api_key"]); got != "gemini-admin-key" {
+		t.Fatalf("api_key attribute = %q", got)
+	}
+	if got := strings.TrimSpace(auth.Attributes["header:X-Gemini-Account-ID"]); got != "gemini-account-1" {
+		t.Fatalf("forced account header attribute = %q", got)
+	}
+}
+
 func TestFileSynthesizer_Synthesize_SkipsInvalidFiles(t *testing.T) {
 	tempDir := t.TempDir()
 
