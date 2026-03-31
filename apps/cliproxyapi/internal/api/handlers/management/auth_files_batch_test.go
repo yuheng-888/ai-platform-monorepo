@@ -84,6 +84,45 @@ func TestUploadAuthFile_BatchMultipart(t *testing.T) {
 	}
 }
 
+func TestUploadAuthFile_RawJSONProjectsCompatCredentialsIntoAttributes(t *testing.T) {
+	t.Setenv("MANAGEMENT_PASSWORD", "")
+	gin.SetMode(gin.TestMode)
+
+	authDir := t.TempDir()
+	manager := coreauth.NewManager(nil, nil, nil)
+	h := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, manager)
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v0/management/auth-files?name=gemini-business.json",
+		bytes.NewBufferString(`{"type":"gemini-business","email":"gemini@example.com","base_url":"http://127.0.0.1:39001/gemini/v1","api_key":"gemini-admin-key","header:X-Gemini-Account-ID":"gemini-account-1"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	ctx.Request = req
+
+	h.UploadAuthFile(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected upload status %d, got %d with body %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	auth, ok := manager.GetByID("gemini-business.json")
+	if !ok || auth == nil {
+		t.Fatal("expected uploaded auth to be registered")
+	}
+	if got := auth.Attributes["base_url"]; got != "http://127.0.0.1:39001/gemini/v1" {
+		t.Fatalf("base_url attribute = %q", got)
+	}
+	if got := auth.Attributes["api_key"]; got != "gemini-admin-key" {
+		t.Fatalf("api_key attribute = %q", got)
+	}
+	if got := auth.Attributes["header:X-Gemini-Account-ID"]; got != "gemini-account-1" {
+		t.Fatalf("forced account header attribute = %q", got)
+	}
+}
+
 func TestUploadAuthFile_BatchMultipart_InvalidJSONDoesNotOverwriteExistingFile(t *testing.T) {
 	t.Setenv("MANAGEMENT_PASSWORD", "")
 	gin.SetMode(gin.TestMode)

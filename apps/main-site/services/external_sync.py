@@ -60,4 +60,15 @@ def sync_account(account) -> list[dict[str, Any]]:
             ok, msg = upload_to_kiro_manager(account, path=configured_path or None)
             results.append({"name": "Kiro Manager", "ok": ok, "msg": msg})
 
+    elif platform == "gemini":
+        cliproxyapi_url = str(config_store.get("cliproxyapi_url", "") or "").strip()
+        from services.cliproxyapi_gemini_business_sync import (
+            is_cliproxyapi_enabled,
+            sync_gemini_account_to_cliproxyapi,
+        )
+
+        if is_cliproxyapi_enabled(cliproxyapi_url or None):
+            ok, msg = sync_gemini_account_to_cliproxyapi(account, api_url=cliproxyapi_url or None)
+            results.append({"name": "CLIProxyAPI", "ok": ok, "msg": msg})
+
     return results

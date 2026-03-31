@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/router-for-me/CLIProxyAPI/v6/internal/registry"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
 )
@@ -61,5 +62,71 @@ func TestRegisterModelsForAuth_UsesPreMergedExcludedModelsAttribute(t *testing.T
 	}
 	if !seenGlobalExcluded {
 		t.Fatal("expected global excluded model to be present when attribute override is set")
+	}
+}
+
+func TestRegisterModelsForAuth_GeminiBusinessUsesGeminiCLIModels(t *testing.T) {
+	service := &Service{cfg: &config.Config{}}
+	auth := &coreauth.Auth{
+		ID:       "auth-gemini-business",
+		Provider: "gemini-business",
+		Status:   coreauth.StatusActive,
+		Attributes: map[string]string{
+			"auth_kind": "api_key",
+			"api_key":   "gemini-admin-key",
+			"base_url":  "http://127.0.0.1:39001/gemini/v1",
+		},
+	}
+
+	globalRegistry := registry.GetGlobalRegistry()
+	globalRegistry.UnregisterClient(auth.ID)
+	t.Cleanup(func() {
+		globalRegistry.UnregisterClient(auth.ID)
+	})
+
+	service.registerModelsForAuth(auth)
+
+	models := globalRegistry.GetModelsForClient(auth.ID)
+	if len(models) == 0 {
+		t.Fatal("expected gemini-business models to be registered")
+	}
+
+	available := globalRegistry.GetAvailableModelsByProvider("gemini-business")
+	if len(available) == 0 {
+		t.Fatal("expected gemini-business provider models to be queryable")
+	}
+
+	expected := registry.GetGeminiCLIModels()
+	if len(expected) == 0 {
+		t.Fatal("expected static gemini-cli models to exist")
+	}
+
+	if strings.TrimSpace(models[0].ID) == "" {
+		t.Fatal("expected first gemini-business model to have an id")
+	}
+}
+
+func TestRegisterModelsForAuth_GeminiBusinessWithoutAPIAttrsStillUsesGeminiCLIModels(t *testing.T) {
+	service := &Service{cfg: &config.Config{}}
+	auth := &coreauth.Auth{
+		ID:       "auth-gemini-business-minimal",
+		Provider: "gemini-business",
+		Status:   coreauth.StatusActive,
+		Metadata: map[string]any{
+			"email": "gemini-business@example.com",
+		},
+	}
+
+	globalRegistry := registry.GetGlobalRegistry()
+	globalRegistry.UnregisterClient(auth.ID)
+	t.Cleanup(func() {
+		globalRegistry.UnregisterClient(auth.ID)
+	})
+
+	service.registerModelsForAuth(auth)
+
+	models := globalRegistry.GetModelsForClient(auth.ID)
+	if len(models) == 0 {
+		t.Fatal("expected gemini-business models to be registered for minimal auth payload")
 	}
 }

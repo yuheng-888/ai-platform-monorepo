@@ -1013,6 +1013,7 @@ func (h *Handler) buildAuthFromFileData(path string, data []byte) (*coreauth.Aut
 		"path":   path,
 		"source": path,
 	}
+	attr = util.MergeAuthMetadataAttributes(attr, metadata)
 	auth := &coreauth.Auth{
 		ID:         authID,
 		Provider:   provider,
